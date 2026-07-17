@@ -62,10 +62,36 @@ jobs:
         with:
           name: coverage-backend
           path: coverage-backend.xml
+  frontend:
+    name: Frontend coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Run frontend tests with coverage
+        # Vitest emits cobertura (configured in vitest.config.ts).
+        run: |
+          npm ci
+          npm run test:coverage
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-frontend
+          path: frontend/coverage/cobertura-coverage.xml
   report:
     name: Upload combined report to Codacy
     runs-on: ubuntu-latest
-    needs: [engine, backend]
+    needs: [engine, backend, frontend]
     env:
       CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
     steps:
@@ -81,4 +107,4 @@ jobs:
         uses: codacy/codacy-coverage-reporter-action@v1.3.0
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-          coverage-reports: reports/coverage-engine/coverage-engine.xml,reports/coverage-backend/coverage-backend.xml
+          coverage-reports: reports/coverage-engine/coverage-engine.xml,reports/coverage-backend/coverage-backend.xml,reports/coverage-frontend/cobertura-coverage.xml

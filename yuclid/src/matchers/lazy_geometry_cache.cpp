@@ -1,5 +1,6 @@
 #include "matchers/lazy_geometry_cache.hpp"
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -7,6 +8,7 @@
 #include "numbers/add_circle.hpp"
 #include "numbers/util.hpp"
 #include "problem.hpp"
+#include "type/dist.hpp"
 #include "type/slope_angle.hpp"
 #include "type/squared_dist.hpp"
 
@@ -62,6 +64,27 @@ namespace Yuclid {
         return *m_segment_length_buckets;
     }
 
+    const std::vector<PointPairId> *LazyGeometryCache::segment_length_bucket_for_pair(
+        ProblemPointIndex first,
+        ProblemPointIndex second
+    ) const {
+        const std::size_t count = num_points();
+        if (first >= count || second >= count || first == second) return nullptr;
+        if (second < first) std::swap(first, second);
+
+        const std::size_t remaining = count - first;
+        const std::size_t remaining_pairs = remaining % 2 == 0
+            ? (remaining / 2) * (remaining - 1)
+            : remaining * ((remaining - 1) / 2);
+        const PointPairId pair_id = point_pairs().size() - remaining_pairs
+            + (second - first - 1);
+
+        const SegmentBuckets &segment_buckets = segment_length_buckets();
+        const PointPairId bucket_id = segment_buckets.bucket_index_by_point_pair.at(pair_id);
+        if (bucket_id == SegmentBuckets::no_bucket) return nullptr;
+        return &segment_buckets.buckets.at(bucket_id);
+    }
+
     const LineOrientationBuckets &LazyGeometryCache::line_orientation_buckets() const {
         if(!m_line_orientation_buckets.has_value()) {
             m_line_orientation_buckets = build_line_orientation_buckets();
@@ -96,7 +119,7 @@ namespace Yuclid {
         const std::vector<PointPair> &all_point_pairs = point_pairs();
         
         /* Build a temporary sorted list:
-         *   key = squared distance between the two points in the pair
+         *   key = distance between the two points in the pair
          *   id  = index into all_point_pairs
          *
          * The base PointPair list is stored once by point_pairs(). This bucket view
@@ -110,22 +133,29 @@ namespace Yuclid {
                     const PointPair &segment = all_point_pairs[segment_id];
 
                     return static_cast<double>(
-                        SquaredDist(
+                        Dist(
                             point(segment.first),
                             point(segment.second)
                         )
                     );
                 }
             );
-        
+
         SegmentBuckets result;
+        result.bucket_index_by_point_pair.resize(
+            all_point_pairs.size(), SegmentBuckets::no_bucket
+        );
 
         // Group point pairs by equal/similar segment length. Singleton buckets are
         // skipped because they cannot produce equal-length segment pairs.
-        for_each_bucket_from_sorted_keyed_ids(
+        for_each_bucket_from_sorted_keyed_ids_adaptive(
             keyed_segments,
-            EPS,
+            [](double key) { return std::max(EPS, REL_TOL * key); },
             [&](std::vector<PointPairId> bucket, [[maybe_unused]] double bucket_key) {
+                const PointPairId bucket_id = result.buckets.size();
+                for (PointPairId pair_id : bucket) {
+                    result.bucket_index_by_point_pair[pair_id] = bucket_id;
+                }
                 result.buckets.push_back(std::move(bucket));
             },
             2,

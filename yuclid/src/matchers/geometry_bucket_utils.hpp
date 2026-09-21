@@ -77,7 +77,7 @@ namespace Yuclid {
      *
      *   - compare each key with the previous key
      *   - keep adding to the same bucket while:
-     *       key < last_key + tolerance
+     *       key - last_key < tolerance
      *   - warn if the bucket drifts more than 10x tolerance from its start
      *
      * The warning matches the old matcher behavior. It does not split or skip
@@ -89,10 +89,10 @@ namespace Yuclid {
      *
      * The caller decides how to store the bucket.
      */
-    template <typename Id, typename AddBucketFn>
-    void for_each_bucket_from_sorted_keyed_ids(
+    template <typename Id, typename AddBucketFn, typename ToleranceFn>
+    void for_each_bucket_from_sorted_keyed_ids_adaptive(
         const std::vector<KeyedId<Id>> &sorted_ids,
-        double tolerance,
+        ToleranceFn tolerance_for_key,
         AddBucketFn add_bucket,
         std::size_t min_bucket_size = 1,
         const char *debug_name = "geometry ids",
@@ -126,8 +126,9 @@ namespace Yuclid {
 
         for (std::size_t index = 1; index < sorted_ids.size(); index++) {
             const double key = sorted_ids[index].key;
+            const double tolerance = tolerance_for_key(key);
 
-            if (key < last_key + tolerance) {
+            if (key - last_key < tolerance) {
                 if (
                     !warned_for_current_bucket &&
                     key >= start_bucket_key + drift_warning_factor * tolerance
@@ -152,6 +153,25 @@ namespace Yuclid {
         }
 
         add_bucket_from_range(start_bucket_index, sorted_ids.size());
+    }
+
+    template <typename Id, typename AddBucketFn>
+    void for_each_bucket_from_sorted_keyed_ids(
+        const std::vector<KeyedId<Id>> &sorted_ids,
+        double tolerance,
+        AddBucketFn add_bucket,
+        std::size_t min_bucket_size = 1,
+        const char *debug_name = "geometry ids",
+        double drift_warning_factor = 10.0
+    ) {
+        for_each_bucket_from_sorted_keyed_ids_adaptive(
+            sorted_ids,
+            [tolerance](double) { return tolerance; },
+            std::move(add_bucket),
+            min_bucket_size,
+            debug_name,
+            drift_warning_factor
+        );
     }
 
     /**

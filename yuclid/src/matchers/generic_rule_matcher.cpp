@@ -141,14 +141,11 @@ namespace Yuclid {
 
                 // setup for search stage
                 MappingState mapping_state(schema, *m_problem);
-                std::vector<RuleMapping> mapping_results;
+                std::vector<Theorem> valid_theorems;
                 FilterState filter_state(current_plan.validators.size());
 
                 // search stage
-                search(current_plan, mapping_state, filter_state, geometry_cache, mapping_results);
-
-                // build stage
-                std::vector<Theorem> valid_theorems = build_valid_theorems_from_mappings(schema, mapping_results);
+                search(current_plan, mapping_state, filter_state, geometry_cache, valid_theorems);
 
                 for(auto &candidate : valid_theorems) {
                     all_correct_generated_theorems.push_back(std::move(candidate));
@@ -199,28 +196,12 @@ namespace Yuclid {
         return cheapest_predicate;
     }
 
-    std::vector<Theorem> GenericRuleMatcher::build_valid_theorems_from_mappings(const RuleSchema &schema, const std::vector<RuleMapping> &mappings) const {
-        std::vector<Theorem> theorems;
-
-        for(const RuleMapping &mapping: mappings){
-            Theorem candidate = build_theorem_from_rule_schema(schema, mapping);
-            if (!candidate.check_hypotheses_nondeg_numerically()) {
-                continue;
-            }
-            if(candidate.check_numerically()){
-                theorems.push_back(candidate.normalize());
-            }
-        }
-
-        return theorems;
-    }
-
     void GenericRuleMatcher::search(
         const RulePlan &plan,
         MappingState &mapping_state,
         FilterState &filter_state,
         LazyGeometryCache &geometry_cache,
-        std::vector<RuleMapping> &results
+        std::vector<Theorem> &results
     ) const {
         // Save the state of filters on this level
         FilterStateSnapshot filter_snapshot = filter_state.snapshot();
@@ -249,9 +230,16 @@ namespace Yuclid {
         }
 
         // BASE CASE
-        // If all variables are mapped, this is a valid leaf node. Yield the mapping.
+        // If all variables are mapped, build and validate the theorem.
         if(mapping_state.is_complete()) {
-            results.push_back(std::move(mapping_state.to_rule_mapping().value()));
+            // build stage
+            Theorem candidate = build_theorem_from_rule_schema(
+                *plan.schema, mapping_state.to_rule_mapping().value());
+
+            if(candidate.check_hypotheses_nondeg_numerically() && candidate.check_numerically()) {
+                results.push_back(candidate.normalize());
+            }
+
             filter_state.rollback(filter_snapshot);
             return;
         }

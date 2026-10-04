@@ -26,6 +26,12 @@ namespace Yuclid {
             static constexpr size_t MAX_VARIABLES_FOR_NAIVE_MATCHING = 6;
             [[nodiscard]] std::vector<RuleMapping> find_mappings_for_rule(const RuleSchema &schema) const;
             void add_providers_to_registry();
+            [[nodiscard]] bool check_completed_generators(
+                const RulePlan &plan,
+                const MappingState &state,
+                MappingStateSnapshot previous_state,
+                const LazyGeometryCache &cache
+            ) const;
             void search(
                 const RulePlan &plan,
                 MappingState &current_state,

@@ -171,9 +171,7 @@ namespace Yuclid {
 
         for(const PlannedPredicate &candidate: predicates){
             // if everything in the generator is assigned skip it
-            // TODO: Decide wether to run is_satisfied? 
-            // But then there has to be an indication of wether were evaluating generators or filters (filters are already checked, no need to do it twice)
-            // Predicates that already have their own provider will probably not cost to check, but the ones from the base provider will slow things down
+            // Newly completed generators are checked after applying an extension
             if(are_pattern_variables_assigned(candidate, state)) continue;
 
             // get provider and metadata
@@ -194,6 +192,32 @@ namespace Yuclid {
         }
 
         return cheapest_predicate;
+    }
+
+    bool GenericRuleMatcher::check_completed_generators(
+        const RulePlan &plan,
+        const MappingState &state,
+        MappingStateSnapshot previous_state,
+        const LazyGeometryCache &cache
+    ) const {
+        for(const PlannedPredicate &candidate: plan.candidate_generators){
+            if(!are_pattern_variables_assigned(candidate, state)) continue;
+
+            // Check only generators completed by the current extension
+            bool newly_completed = false;
+            for(const RuleVariableIndex variable: candidate.variable_indices){
+                if(!(previous_state.assigned_variables & (std::uint64_t{1} << variable))){
+                    newly_completed = true;
+                    break;
+                }
+            }
+            if(!newly_completed) continue;
+
+            const PredicateProvider* candidate_provider = m_provider_registry.get_provider(candidate.pattern.name);
+            if(!candidate_provider->is_satisfied(candidate, state, cache)) return false;
+        }
+
+        return true;
     }
 
     void GenericRuleMatcher::search(
@@ -268,7 +292,12 @@ namespace Yuclid {
 
                 // Attempt to apply the generated extension
                 if(mapping_state.try_apply_extension(extension)){
-                    search(plan, mapping_state, filter_state, geometry_cache, results);     // Recurse (go deeper in the tree)
+                    // Complete mappings are checked when building the theorem
+                    if(mapping_state.is_complete() || check_completed_generators(
+                        plan, mapping_state, variable_snapshot, geometry_cache
+                    )){
+                        search(plan, mapping_state, filter_state, geometry_cache, results); // Recurse (go deeper in the tree)
+                    }
                     mapping_state.rollback(variable_snapshot);                              // Backtrack
                 }
             }

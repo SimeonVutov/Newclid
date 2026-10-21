@@ -7,6 +7,7 @@ from newclid.numerical import close_enough
 from newclid.predicate_types import PredicateArgument
 from newclid.predicates._index import PredicateType
 from newclid.predicates._interface import PredicateInterface
+from newclid.predicates.constant_ratio import ConstantRatio
 from newclid.symbols.points_registry import Segment
 from newclid.tools import fraction_to_ratio, str_to_fraction
 
@@ -24,6 +25,12 @@ class SquaredConstantRatio(PredicateInterface):
     segment1: Segment
     segment2: Segment
     square_ratio: Fraction
+
+    @staticmethod
+    def prepare_rule_arguments(
+        args: tuple[PredicateArgument, ...],
+    ) -> tuple[PredicateArgument, ...]:
+        return ConstantRatio.prepare_rule_arguments(args)
 
     @staticmethod
     def preparse(

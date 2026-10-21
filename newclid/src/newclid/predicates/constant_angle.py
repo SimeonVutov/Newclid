@@ -37,6 +37,15 @@ class ConstantAngle(PredicateInterface):
     angle: Fraction
 
     @staticmethod
+    def prepare_rule_arguments(
+        args: tuple[PredicateArgument, ...],
+    ) -> tuple[PredicateArgument, ...]:
+        if len(args) != 5:
+            return args
+        a, b, c, d, y = args
+        return (a, b, c, d, PredicateArgument(fraction_to_angle(str_to_fraction(y))))
+
+    @staticmethod
     def preparse(
         args: tuple[PredicateArgument, ...],
     ) -> tuple[PredicateArgument, ...] | None:

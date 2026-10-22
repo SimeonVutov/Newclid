@@ -147,7 +147,15 @@ int main(int argc, char* argv[]) {
     } else {
       BOOST_LOG_TRIVIAL(info) << "Reading custom rules from " << custom_rules_file;
       ifstream rules_input(custom_rules_file);
+      if (!rules_input) {
+        throw runtime_error(std::format(
+          "Failed to open custom rules file '{}'", custom_rules_file));
+      }
       custom_rules = parse_rule_schemas(rules_input);
+      if (rules_input.bad()) {
+        throw runtime_error(std::format(
+          "Failed to read custom rules file '{}'", custom_rules_file));
+      }
     }
 
     if (config.global().input_file_paths().empty()) {

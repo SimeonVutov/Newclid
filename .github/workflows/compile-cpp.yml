@@ -11,6 +11,7 @@ on:
     paths:
       - "yuclid/**"
       - ".github/workflows/compile-cpp.yml"
+      - ".github/scripts/build-boost-macos.sh"
 
   workflow_dispatch:
 
@@ -22,29 +23,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linux-build-and-test:
-    name: Linux ${{ matrix.name }}
-    runs-on: ubuntu-latest
+  build_and_test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: GCC
+          - name: Linux GCC
+            os: ubuntu-latest
             cxx_compiler: g++-14
             compiler_package: g++-14
-            build_type: RelWithDebInfo
 
-          - name: Clang
+          - name: Linux Clang
+            os: ubuntu-latest
             cxx_compiler: clang++-19
             compiler_package: clang-19
-            build_type: RelWithDebInfo
+
+          - name: macOS GCC
+            os: macos-15
+            cxx_compiler: g++-14
+
+          - name: Windows MSVC
+            os: windows-2025
+            cxx_compiler: cl
+
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      BOOST_VERSION: 1.87.0
+      BOOST_INSTALL_DIR: .boost-gcc
+      # Bump this when the Boost library set or build flags change.
+      # This forces GitHub Actions to rebuild the cached GCC-built Boost tree.
+      BOOST_CACHE_VERSION: v2
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Install Dependencies Linux
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -53,65 +71,20 @@ jobs:
             libboost-all-dev \
             ${{ matrix.compiler_package }}
 
-      - name: Configure and Build CMake Project
-        uses: threeal/cmake-action@v2.1.0
-        with:
-          source-dir: yuclid
-          cxx-compiler: ${{ matrix.cxx_compiler }}
-          build-dir: build
-          build-args: "--config ${{ matrix.build_type }}"
-          options: |
-            CMAKE_BUILD_TYPE=${{ matrix.build_type }}
-            BUILD_DOC=OFF
-
-      - name: Run CTest
-        uses: threeal/ctest-action@v1.1.0
-        with:
-          test-dir: build
-          build-config: ${{ matrix.build_type }}
-          args: "--output-on-failure"
-
-      - name: Upload CMake logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cmake-configure-log-Linux-${{ matrix.name }}
-          path: build/CMakeFiles/CMakeConfigureLog.yaml
-          retention-days: 7
-
-  # macOS is intentionally different from the normal Linux/Windows build.
-  #
-  # Yuclid uses C++23 <generator>. The default Apple Clang/libc++ toolchain on
-  # GitHub macOS runners does not support this path reliably, so this job builds
-  # Yuclid with Homebrew GCC 14.
-  #
-  # Boost must be built with the same GCC/libstdc++ toolchain. Using Homebrew's
-  # prebuilt Boost can mix Apple Clang/libc++ Boost libraries with GCC-built
-  # Yuclid objects, which leads to ABI/linker problems.
-  macos-build-and-test:
-    name: macOS GCC
-    runs-on: macos-15
-
-    env:
-      BOOST_VERSION: 1.87.0
-      BOOST_DIR_NAME: boost_1_87_0
-      BOOST_INSTALL_DIR: .boost-gcc
-      # Bump this when the Boost library set or build flags change.
-      # This forces GitHub Actions to rebuild the cached GCC-built Boost tree.
-      BOOST_CACHE_VERSION: v2
-      MACOSX_DEPLOYMENT_TARGET: "15.0"
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
+      # Yuclid needs GCC's C++23 <generator> support on macOS.
+      # Build Boost with the same compiler to avoid mixing libc++ and libstdc++.
       - name: Install Dependencies macOS
+        if: runner.os == 'macOS'
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "15.0"
         run: |
           brew update
           brew install cmake gcc@14
           echo "$(brew --prefix gcc@14)/bin" >> "$GITHUB_PATH"
+          echo 'MACOSX_DEPLOYMENT_TARGET=15.0' >> "$GITHUB_ENV"
 
       - name: Restore macOS Boost GCC cache
+        if: runner.os == 'macOS'
         id: restore-macos-boost
         uses: actions/cache/restore@v4
         with:
@@ -119,43 +92,39 @@ jobs:
           key: macos-15-boost-${{ env.BOOST_VERSION }}-gcc14-${{ env.BOOST_CACHE_VERSION }}-${{ runner.arch }}
 
       - name: Build Boost with GCC on macOS
-        if: steps.restore-macos-boost.outputs.cache-hit != 'true'
-        run: |
-          set -euxo pipefail
-
-          curl -L "https://archives.boost.io/release/${BOOST_VERSION}/source/${BOOST_DIR_NAME}.tar.gz" -o boost.tar.gz
-          tar -xzf boost.tar.gz
-          cd "${BOOST_DIR_NAME}"
-
-          GCC_PREFIX="$(brew --prefix gcc@14)"
-          echo "using gcc : 14 : ${GCC_PREFIX}/bin/g++-14 ;" > "$HOME/user-config.jam"
-
-          ./bootstrap.sh \
-            --prefix="$GITHUB_WORKSPACE/${BOOST_INSTALL_DIR}" \
-            --with-libraries=atomic,chrono,container,date_time,filesystem,json,log,program_options,regex,system,thread,test
-
-          ./b2 \
-            -j"$(sysctl -n hw.ncpu)" \
-            toolset=gcc-14 \
-            target-os=darwin \
-            cxxstd=23 \
-            variant=release \
-            threading=multi \
-            link=static \
-            runtime-link=shared \
-            install
+        if: runner.os == 'macOS' && steps.restore-macos-boost.outputs.cache-hit != 'true'
+        run: bash .github/scripts/build-boost-macos.sh
 
       - name: Save macOS Boost GCC cache
-        if: steps.restore-macos-boost.outputs.cache-hit != 'true'
+        if: runner.os == 'macOS' && steps.restore-macos-boost.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.BOOST_INSTALL_DIR }}
           key: macos-15-boost-${{ env.BOOST_VERSION }}-gcc14-${{ env.BOOST_CACHE_VERSION }}-${{ runner.arch }}
 
+      - name: Update vcpkg
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: vcpkg update
+
+      - name: Configure and Build CMake Project
+        if: runner.os != 'macOS'
+        uses: threeal/cmake-action@v2.1.0
+        with:
+          source-dir: yuclid
+          cxx-compiler: ${{ matrix.cxx_compiler }}
+          build-dir: build
+          build-args: "--config ${{ env.BUILD_TYPE }}"
+          options: |
+            CMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+            BUILD_DOC=OFF
+            ${{ runner.os == 'Windows' && 'CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake' || '' }}
+
       # Force CMake to use the GCC-built Boost tree from .boost-gcc.
       # Without Boost_NO_SYSTEM_PATHS, CMake may silently pick Homebrew/system
       # Boost and reintroduce the macOS ABI mismatch.
       - name: Configure and Build Yuclid macOS
+        if: runner.os == 'macOS'
         run: |
           set -euxo pipefail
 
@@ -164,7 +133,7 @@ jobs:
 
           cmake yuclid -B build \
             -DCMAKE_CXX_COMPILER="${GCC_PREFIX}/bin/g++-14" \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
             -DBUILD_DOC=OFF \
             -DBoost_ROOT="${BOOST_ROOT}" \
             -DBOOST_ROOT="${BOOST_ROOT}" \
@@ -172,58 +141,26 @@ jobs:
             -DBoost_NO_SYSTEM_PATHS=ON \
             -DBoost_USE_STATIC_LIBS=ON
 
-          cmake --build build --config RelWithDebInfo
-
-      - name: Run CTest macOS
-        run: |
-          ctest \
-            --test-dir build \
-            --build-config RelWithDebInfo \
-            --output-on-failure
-
-      - name: Upload CMake logs on failure macOS
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cmake-configure-log-macOS-GCC
-          path: build/CMakeFiles/CMakeConfigureLog.yaml
-          retention-days: 7
-
-  windows-build-and-test:
-    name: Windows MSVC
-    runs-on: windows-2025
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Update vcpkg
-        shell: pwsh
-        run: vcpkg update
-
-      - name: Configure and Build CMake Project
-        uses: threeal/cmake-action@v2.1.0
-        with:
-          source-dir: yuclid
-          cxx-compiler: cl
-          build-dir: build
-          build-args: "--config RelWithDebInfo"
-          options: |
-            CMAKE_BUILD_TYPE=RelWithDebInfo
-            BUILD_DOC=OFF
-            CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+          cmake --build build --config "${BUILD_TYPE}"
 
       - name: Run CTest
         uses: threeal/ctest-action@v1.1.0
         with:
           test-dir: build
-          build-config: RelWithDebInfo
+          build-config: ${{ env.BUILD_TYPE }}
           args: "--output-on-failure"
+
+      - name: Upload executable as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yuclid-${{ runner.os }}-${{ matrix.cxx_compiler }}
+          path: ${{ runner.os == 'Windows' && format('build/src/{0}/yuclid.exe', env.BUILD_TYPE) || 'build/src/yuclid' }}
+          retention-days: 7
 
       - name: Upload CMake logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: cmake-configure-log-Windows-MSVC
+          name: cmake-configure-log-${{ runner.os }}-${{ matrix.cxx_compiler }}
           path: build/CMakeFiles/CMakeConfigureLog.yaml
           retention-days: 7

@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -19,7 +19,7 @@ from typing_extensions import Self
 
 from newclid.agent.agents_interface import DeductiveAgent
 from newclid.agent.ddarn import DDARN
-from newclid.all_rules import ALL_RULES, DEFAULT_RULES
+from newclid.all_rules import DEFAULT_RULES
 from newclid.animation import ProofAnimation
 from newclid.api_defaults import APIDefault
 from newclid.deductors.deductor_interface import Deductor
@@ -151,7 +151,7 @@ class PythonDefault(APIDefault):
     def default_deductive_agent(self) -> DeductiveAgent:
         return DDARN()
 
-    def callback(self, proof_state: ProofState) -> None:
+    def callback(self, proof_state: ProofState, rules: Sequence[Rule]) -> None:
         pass
 
 
@@ -197,11 +197,7 @@ class GeometricSolverBuilder:
             rng=self.rng,
         )
 
-        self.api_default.callback(proof_state)
-        if hasattr(self.api_default, "he_adapter"):
-            # A rule is only considered custom if it doesnt exist in the complete standard library
-            custom_rules = [r for r in self.rules if r not in ALL_RULES]
-            self.api_default.he_adapter.custom_rules = custom_rules
+        self.api_default.callback(proof_state, self.rules)
         return GeometricSolver(proof_state, self.rules, self.deductive_agent)
 
     def with_deductive_agent(self, deductive_agent: DeductiveAgent) -> Self:

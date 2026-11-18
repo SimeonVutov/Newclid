@@ -212,7 +212,7 @@ directory first on ``PATH``. For example, on Linux:
    PATH="$PWD/build/src:$PATH" .venv/bin/python custom_rule_example.py
 
 Use a unique rule id. ``with_additional_rules`` skips duplicate ids rather
-than replacing an existing rule. See :doc:`architecture` for the round trip.
+than replacing an existing rule. See :doc:`custom-rule-architecture` for the round trip.
 
 Supported syntax and limits
 ---------------------------
@@ -280,7 +280,7 @@ files, use explicit fractions as well, including integers such as ``3/1``.
    A rule can have at most **64 distinct variables** and **64 validator
    predicates**, counted across hypotheses and conclusions. The latter is
    not a limit on the total number of predicates; roles are explained in
-   :doc:`matching`. Exceeding either limit skips the rule with a warning.
+   :doc:`matching-a-custom-rule`. Exceeding either limit skips the rule with a warning.
 
 Different variables map to different problem points; repeating a variable
 reuses its point. The Python ``allow_point_repetition`` option is not

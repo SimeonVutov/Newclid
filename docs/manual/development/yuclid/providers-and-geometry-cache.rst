@@ -13,7 +13,7 @@ predicate to try next and when to backtrack.
 For example, suppose a rule asks for two segments of equal length and
 the matcher already knows one segment. A general provider can suggest
 unused points for the second segment. A specialized provider can use
-the known length to look for likely matches first. See :doc:`matching`
+the known length to look for likely matches first. See :doc:`matching-a-custom-rule`
 for where these calls happen in the search.
 
 What the matcher asks a provider
@@ -63,9 +63,9 @@ Available providers and indexes
 
 **Providers**
 
-- :doc:`provider-examples/base` enumerates assignments for predicates without
+- :doc:`reference/base-provider` enumerates assignments for predicates without
   a specialized provider.
-- :doc:`provider-examples/congruence` uses segment lengths to narrow the
+- :doc:`reference/congruence-provider` uses segment lengths to narrow the
   search for ``cong``.
 
 **Geometry cache**
@@ -79,9 +79,9 @@ Available providers and indexes
 .. toctree::
    :hidden:
 
-   provider-examples/base
-   provider-examples/congruence
-   provider-examples/geometry-indexes
+   reference/base-provider
+   reference/congruence-provider
+   reference/geometry-cache-indexes
 
 Adding a provider
 -----------------
@@ -112,7 +112,7 @@ preserving the accepted cases.
 ``yuclid/test/cong_provider.cpp`` and
 ``yuclid/test/lazy_geometry_cache.cpp`` show how to exercise providers
 and indexes. Register new test targets in ``yuclid/test/CMakeLists.txt``.
-See :doc:`setup` for build and test commands.
+See :doc:`setup-and-usage` for build and test commands.
 
 To support a new predicate name, first add its argument validation
 in ``rules/schema_validator.cpp``, its statement construction in

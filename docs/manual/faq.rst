@@ -111,9 +111,9 @@ directly, you can supply the rule in a custom-rule file with
 ``--input-additional-rules-file``. Both paths let you combine supported
 predicates into new rules without writing C++.
 
-See :doc:`development/yuclid/setup` for runnable examples and the
+See :doc:`development/yuclid/setup-and-usage` for runnable examples and the
 supported syntax. To add support for a new predicate or speed up
-matching for an existing one, see :doc:`development/yuclid/providers`.
+matching for an existing one, see :doc:`development/yuclid/providers-and-geometry-cache`.
 
 What do I get after I run a problem?
 ------------------------------------

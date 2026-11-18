@@ -7,8 +7,8 @@ predicates form a constraint satisfaction problem (CSP). The matcher
 uses depth-first search (DFS), exploring one sequence of assignments
 at a time and undoing choices as it returns to an earlier step.
 
-See :doc:`architecture` for how the resulting candidates reach proof search
-and :doc:`concepts` for the rule and mapping representations.
+See :doc:`custom-rule-architecture` for how the resulting candidates reach proof search
+and :doc:`rule-representations` for the rule and mapping representations.
 
 The search loop
 ---------------
@@ -53,7 +53,7 @@ A predicate's role controls when search uses it. Its provider controls
 how it generates extensions or checks geometry. For example, ``coll``
 is a generator that uses ``BaseProvider``, which enumerates assignments
 before the matcher checks collinearity. ``cong`` has a specialized
-provider. See :doc:`providers` for the provider interface.
+provider. See :doc:`providers-and-geometry-cache` for the provider interface.
 
 ``CandidateFilter`` is a separate reserved role. Current custom rules
 use generators and validators, and search does not process the plan's

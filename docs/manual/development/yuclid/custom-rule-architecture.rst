@@ -22,7 +22,7 @@ If you run Yuclid directly, you supply the rule file and the problem file.
 When you register a rule in Newclid with ``with_additional_rules``, the
 Python adapter prepares constants, writes both files to a temporary
 directory, and launches Yuclid in ``ddar`` mode with JSON output.
-See :doc:`setup` for examples of both entry points.
+See :doc:`setup-and-usage` for examples of both entry points.
 
 Read the rule and the problem
 -----------------------------
@@ -77,8 +77,8 @@ larger rule, the matcher may fill the variables over several steps.
 Each sequence of choices is a *branch*. The matcher can return to an
 earlier choice and try a different point assignment.
 
-See :doc:`concepts` for how assignments are represented and
-:doc:`matching` for how the search proceeds.
+See :doc:`rule-representations` for how assignments are represented and
+:doc:`matching-a-custom-rule` for how the search proceeds.
 
 Build and check a theorem
 -------------------------

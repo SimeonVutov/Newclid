@@ -4,7 +4,7 @@ Rule representations
 A custom rule starts as a template. The matcher turns it into a search
 plan, assigns its variables to points, and builds concrete theorems from
 the assignments that pass. This page follows the representations used at
-each step. The :doc:`architecture` page shows where they fit in Yuclid.
+each step. The :doc:`custom-rule-architecture` page shows where they fit in Yuclid.
 
 Rule schema
 -----------
@@ -33,7 +33,7 @@ Constants stay in their argument positions. The C++ statement builder uses
 ``parser/constant_parser.hpp`` to convert them when constructing statements.
 If the rule comes through Newclid, ``prepare_rule_arguments`` prepares its
 constants for Yuclid without changing point argument positions. See
-:doc:`setup` for the formats accepted by each entry point.
+:doc:`setup-and-usage` for the formats accepted by each entry point.
 
 Rule plan
 ---------
@@ -71,7 +71,7 @@ statement construction.
 
 The plan groups predicates by their search role. The schema still records
 which statements serve as hypotheses and which serve as conclusions.
-See :doc:`matching` for how the roles affect search order.
+See :doc:`matching-a-custom-rule` for how the roles affect search order.
 
 Partial and complete mappings
 -----------------------------

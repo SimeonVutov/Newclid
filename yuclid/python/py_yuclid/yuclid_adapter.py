@@ -256,6 +256,10 @@ class YuclidAdapter(DeductionProvider):
                 LOGGER.error(error_msg)
                 raise YuclidError(error_msg) from e
 
+            stderr = result.stderr.strip()
+            if stderr:
+                LOGGER.warning("Yuclid reported warnings:\n%s", stderr)
+
             try:
                 he_output = YuclidOutput.model_validate_json(result.stdout)
             except json.JSONDecodeError as e:

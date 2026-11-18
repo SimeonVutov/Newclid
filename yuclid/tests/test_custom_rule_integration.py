@@ -186,7 +186,7 @@ class TestYuclidCustomRuleIntegration:
             for theorem in custom_theorems
         )
 
-    def test_custom_rule_passed_via_temp_file(self):
+    def test_valid_custom_rule_runs_after_invalid_rule_is_skipped(self, caplog):
         """
         Uses a problem (IMO 2012 P5) that the standard engine CANNOT solve natively.
         By injecting a custom cheat rule that bridges the assumptions to the goal,
@@ -200,7 +200,13 @@ class TestYuclidCustomRuleIntegration:
             conclusions_txt=("cong X U X Z",),
         )
 
-        self.solver_builder.with_additional_rules([custom_rule])
+        invalid_rule = Rule(
+            id="invalid_collinearity",
+            description="Collinearity requires at least three points",
+            premises_txt=("coll X Y",),
+            conclusions_txt=("coll X Y Z",),
+        )
+        self.solver_builder.with_additional_rules([invalid_rule, custom_rule])
 
         # 'a' as midpoint of 'b' and 'c' guarantees that AB = AC and they form a line.
         # This makes our custom rule numerically true!
@@ -220,6 +226,14 @@ class TestYuclidCustomRuleIntegration:
 
         # Ensure the engine reached the goal
         assert success, "The solver failed to reach the goal."
+
+        assert any(
+            record.name == "py_yuclid.yuclid_adapter"
+            and record.levelno == logging.WARNING
+            and "invalid_collinearity" in record.message
+            and "expects at least 3 arguments" in record.message
+            for record in caplog.records
+        )
 
         # Verify it was the custom rule that was mapped back
         custom_rule_obj = next(

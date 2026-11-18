@@ -291,10 +291,9 @@ Use letter-prefixed variable names and declare only variables used in the rule.
 The matcher logs a warning and skips rules that fail schema validation, for
 example when a predicate is unknown or uses an undeclared variable. Unreadable
 files and syntax errors, such as a missing ``end`` or a predicate with no
-arguments, fail the run. A valid rule
-with no matches is not an error. To inspect skipped-rule warnings, run the CLI:
-the Python adapter currently captures stderr without forwarding it on successful
-runs.
+arguments, fail the run. A valid rule with no matches is not an error.
+When Yuclid runs through Newclid, the Python adapter forwards warnings
+through the ``py_yuclid.yuclid_adapter`` logger.
 
 .. important::
 

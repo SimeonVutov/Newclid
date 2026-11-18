@@ -1,219 +1,113 @@
-Yuclid custom rule architecture
-===============================
+Custom-rule architecture
+========================
 
-The Yuclid changes add a generic matcher for user-defined rule schemas. The main
-idea is that Newclid can pass non-standard rules to Yuclid, and Yuclid can search
-for concrete theorem instances without hardcoding every possible custom rule in
-C++.
+A custom rule tells Yuclid what it can conclude from a premise. If
+``M`` is the midpoint of ``AB``, for example, then ``AM`` and ``MB`` have
+equal length. The same rule can be used with different points.
 
-Yuclid custom rule pipeline
----------------------------
+.. figure:: custom-rule-flow.svg
+   :alt: Newclid and direct CLI inputs lead to the same Yuclid parsing and
+         matching flow. Match mode lists candidates. DDAR produces proof
+         deductions that the Python adapter can read.
+   :align: center
 
-.. code-block:: text
+   Start at either input at the top. The dotted outline marks the work
+   done by ``TheoremMatcher``, including the search it delegates to
+   ``GenericRuleMatcher``. The dashed arrow shows where search loops back.
 
-   Newclid Rule objects
-        │
-        ▼
-   GeometricSolverBuilder.with_additional_rules(...)
-        │
-        ▼
-   YuclidAdapter writes custom_rules_<problem>.txt
-        │
-        ▼
-   yuclid --input-additional-rules-file custom_rules.txt
-        │
-        ▼
-   parser/rule_parser.cpp parses RuleSchema objects
-        │
-        ▼
-   rules/schema_validator.cpp validates variables and predicates
-        │
-        ▼
-   DDARSolver and TheoremMatcher receive the custom schemas
-        │
-        ▼
-   GenericRuleMatcher plans and matches each schema
-        │
-        ▼
-   PredicateProvider implementations generate candidate mappings
-        │
-        ▼
-   TheoremBuilder builds theorem candidates
-        │
-        ▼
-   Existing theorem validation accepts or rejects candidates
-        │
-        ▼
-   Yuclid returns deductions to the Newclid adapter
+Send a rule to Yuclid
+---------------------
 
-Yuclid architecture layers
---------------------------
+If you run Yuclid directly, you supply the rule file and the problem file.
+When you register a rule in Newclid with ``with_additional_rules``, the
+Python adapter prepares constants, writes both files to a temporary
+directory, and launches Yuclid in ``ddar`` mode with JSON output.
+See :doc:`setup` for examples of both entry points.
 
-.. list-table::
-   :widths: 28 34 38
-   :header-rows: 1
+Read the rule and the problem
+-----------------------------
 
-   * - Layer
-     - Main files
-     - Responsibility
-   * - Input and configuration
-     - ``config_options.*``, ``main.cpp``
-     - Accept an optional custom-rule file and pass parsed schemas into matching and solving.
-   * - Rule schema layer
-     - ``rule_parser.*``, ``rule_schema.hpp``, ``schema_validator.*``
-     - Parse and validate user-defined rule schemas.
-   * - Construction layer
-     - ``statement_builder.*``, ``theorem_builder.*``, ``rule_mapping.hpp``
-     - Turn rule predicates and variable mappings into Yuclid statements and theorem candidates.
-   * - Matching layer
-     - ``generic_rule_matcher.*``, ``rule_plan.*``, ``mapping_state.*``, ``filter_state.*``
-     - Search for mappings from schema variables to problem points.
-   * - Provider/cache layer
-     - ``predicate_provider.*``, ``base_provider.*``, ``cong_provider.*``, ``lazy_geometry_cache.*``
-     - Generate candidate extensions efficiently using predicate-specific indexes and lazy geometry caches.
-   * - Newclid boundary
-     - ``yuclid_adapter.py``, ``newclid/api.py``
-     - Forward custom rules to Yuclid and map returned custom-rule deductions back to Newclid rules.
-
-Yuclid design rules
--------------------
-
-The custom-rule matcher follows these design rules:
-
-.. list-table::
-   :widths: 32 68
-   :header-rows: 1
-
-   * - Rule
-     - Reason
-   * - Keep parsing separate from matching.
-     - Invalid rule text should fail before the matcher starts searching.
-   * - Match schemas through indexed predicates when possible.
-     - A selective predicate such as ``cong`` can reduce the search space before fallback enumeration is needed.
-   * - Keep providers predicate-specific.
-     - Provider code should know how to generate and check one predicate shape well.
-   * - Build theorem candidates, then validate them normally.
-     - Generic matching proposes candidates; existing theorem validation remains the final guard.
-   * - Keep Newclid/Yuclid contracts explicit.
-     - Custom rules crossing the Python/C++ boundary should be serialized through a simple text format.
-
-Yuclid matcher extension points
--------------------------------
-
-Most future changes fall into one of these categories:
-
-- add a predicate provider: start with :doc:`guides/add_a_predicate_provider`;
-- add a lazy cache: start with :doc:`guides/add_a_lazy_cache`;
-- support a new predicate end-to-end: start with :doc:`guides/add_a_supported_predicate`;
-- optimize an expensive custom rule: start with :doc:`guides/optimize_a_generic_rule`;
-- debug missing or excessive matches: start with :doc:`guides/debug_generic_matching`.
-
-Yuclid full custom-rule round trip
-----------------------------------
-
-The custom-rule feature is a cross-component flow. Yuclid does not receive a
-Python ``Rule`` object directly. Newclid first decides which rules are not part
-of the standard library, the Python adapter serializes them into Yuclid's rule
-file syntax, and the C++ executable parses that file before theorem matching
-starts.
+The two entry points meet at the same parsers. The rule parser reads a
+block like this into a ``RuleSchema``:
 
 .. code-block:: text
 
-   1. A calling application (e.g. a Python script, notebook, or an external
-      service such as Viewclid) submits custom theorem text
-          │
-          ▼
-   2. Newclid builds Newclid Rule objects
-          │
-          ▼
-   3. GeometricSolverBuilder.with_additional_rules(...) appends non-duplicate rules
-          │
-          ▼
-   4. GeometricSolverBuilder.build(...) detects non-standard rules
-          │
-          ▼
-   5. YuclidAdapter.custom_rules stores only rules not present in ALL_RULES
-          │
-          ▼
-   6. YuclidAdapter writes two temporary files
-          │       problem_<name>.txt
-          │       custom_rules_<name>.txt
-          ▼
-   7. Yuclid executable is called with both files
-          │       --input-file problem_<name>.txt
-          │       --input-additional-rules-file custom_rules_<name>.txt
-          ▼
-   8. C++ main.cpp parses the problem and the custom rule schemas
-          │
-          ▼
-   9. TheoremMatcher receives standard matching plus custom schemas
-          │
-          ▼
-   10. GenericRuleMatcher searches concrete mappings for each schema
-          │
-          ▼
-   11. TheoremBuilder turns accepted mappings into theorem candidates
-          │
-          ▼
-   12. Existing theorem validation/insertion accepts only valid candidates
-          │
-          ▼
-   13. Yuclid returns deductions tagged with the custom rule id
-          │
-          ▼
-   14. YuclidAdapter maps the deduction id back to the Newclid Rule object
+   rule midpoint_equal_lengths A B M
+   require midp M A B
+   conclude cong A M M B
+   end
 
-The important design point is that the Python side owns transport and rule
-registration, while the C++ side owns parsing, matching, and theorem candidate
-construction. A future developer debugging a missing deduction should follow the
-same order: Newclid rule creation, adapter serialization, Yuclid rule parsing,
-generic matching, theorem validation, and returned deduction mapping.
+The schema holds the rule ID, the declared variables, and the predicate
+patterns from the ``require`` and ``conclude`` lines. At this point
+``A``, ``B``, and ``M`` are still placeholders. The problem parser, meanwhile,
+reads the actual points, their coordinates, the assumptions, and the goals.
+For this example, suppose it reads ``a = (0, 0)``, ``m = (1, 0)``, and
+``b = (2, 0)``.
 
-Yuclid matcher role in the existing solver
-------------------------------------------
-
-The generic matcher does not replace Yuclid's existing hardcoded theorem
-matching. It is added as an extra source of theorem candidates for rules that are
-not known at compile time. Standard rules still use the normal Yuclid machinery.
-Custom rules use the generic path because their predicate patterns are only known
-at runtime.
-
-.. list-table::
-   :widths: 32 68
-   :header-rows: 1
-
-   * - Rule source
-     - Matching path
-   * - Built-in Yuclid/Newclid rule
-     - Existing theorem matcher logic.
-   * - User-defined custom rule
-     - ``RuleSchema`` → ``RulePlan`` → ``GenericRuleMatcher`` → provider-based mapping search → theorem candidate validation.
-   * - Final accepted theorem
-     - Inserted back into the same theorem/proof pipeline as other theorem candidates.
-
-This is why the docs focus on the custom-rule pipeline instead of documenting all
-of DDAR. The changed code connects custom rules to the existing solver; it does
-not redesign the whole solver.
-
-Yuclid provider idea in the pipeline
+Dispatch matching and plan each rule
 ------------------------------------
 
-A generic rule matcher could try every possible assignment of rule variables to
-problem points. That is complete, but it becomes unusable as soon as a rule has
-several variables and the problem has many points.
+``TheoremMatcher`` runs the built-in matchers and hands the custom schemas
+to ``GenericRuleMatcher``. The generic matcher checks each schema for problems
+such as undeclared variables or the wrong number of predicate arguments.
+It skips rules that fail validation and logs a warning.
 
-Predicate providers are the optimization layer. A provider looks at one planned
-predicate and suggests only mappings that have a realistic chance of satisfying
-that predicate. For example, the ``cong`` provider uses equal-length segment
-buckets. If the rule requires ``cong A B C D`` and ``A`` and ``B`` are already
-mapped, it does not try every possible ``C`` and ``D``. It only tries point pairs
-whose segment length matches ``AB``.
+For each rule it can search, the matcher builds a ``RulePlan``. The plan
+records which variables each predicate uses, the role it plays in the
+search, and its base cost. As points are assigned, the matcher uses the
+roles and current cost estimates to decide which predicate to use next.
 
-The goal is to cut the search space without losing valid matches:
+Both sides of the rule can guide the search. In this example,
+``cong A M M B`` is a *generator*, so the matcher uses the equal-length
+conclusion to find points. Then ``midp M A B``, a *validator*, checks
+whether those points form a midpoint. The rule still applies in the
+direction written in the file when the solver uses it in a proof.
 
-- exclude mappings that are definitely impossible for the predicate;
-- keep mappings that may satisfy the predicate;
-- let ``is_satisfied`` and final theorem validation reject remaining false positives.
+Search for point assignments
+----------------------------
 
-Providers therefore optimize candidate generation, but they are not the final
-source of truth for theorem correctness.
+Providers suggest points for the rule's variables. Some providers use a
+shared geometry cache to speed up the search. The matcher checks each
+suggestion and tries another if a check fails.
+
+Here the congruence provider can suggest an assignment for all three
+variables at once. With ``A → a``, ``B → b``, and ``M → m``, the two
+segments have equal length, and the midpoint check also passes. In a
+larger rule, the matcher may fill the variables over several steps.
+Each sequence of choices is a *branch*. The matcher can return to an
+earlier choice and try a different point assignment.
+
+See :doc:`concepts` for how assignments are represented and
+:doc:`matching` for how the search proceeds.
+
+Build and check a theorem
+-------------------------
+
+Once every variable has a point, the statement builder creates the
+concrete premise and conclusion. The theorem builder combines them into
+a ``Theorem`` with the original rule ID. This assignment gives:
+
+.. code-block:: text
+
+   midp m a b → cong a m m b
+
+Yuclid verifies that the premises are nondegenerate and that both sides
+agree with the coordinates. It normalizes and keeps candidates that pass,
+then continues searching for other assignments. When matching finishes,
+``TheoremMatcher`` collects the custom candidates with the built-in ones.
+
+List candidates or use them in a proof
+--------------------------------------
+
+In ``match`` mode, Yuclid prints the candidate list. In ``ddar`` mode, the
+solver records the problem's assumptions and loads the candidates during
+initialization. To use the midpoint candidate, it needs ``midp m a b``
+from an assumption or an earlier deduction. Once that premise is
+established, the candidate can justify ``cong a m m b``. The coordinate
+checks explain why the candidate is available. The established premise
+is what lets the solver apply it.
+
+Yuclid returns the proof as text or JSON. On the Newclid path, the
+adapter reads the JSON and looks up each custom rule deduction's original
+Python rule by ID. Newclid can follow that deduction and add the conclusion
+to its own proof state once the premises are established.

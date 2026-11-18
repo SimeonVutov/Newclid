@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 979" width="620" height="979">
+  <title>A custom rule from Newclid to Yuclid and back</title>
+  <desc>Newclid registers a rule and the adapter passes temporary rule and problem files to Yuclid. Direct CLI users supply the files themselves. Yuclid parses the files, validates the rule, and plans the search. Providers suggest points and use the cache where applicable. The matcher checks assignments, keeps valid theorems, and backtracks to try more assignments. Match mode lists candidates. DDAR uses candidates with established premises and returns proof deductions. The Newclid adapter reads JSON and maps deductions back to their Python rules.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#425c72"/>
+    </marker>
+    <style>
+      .python { fill: #f1eef9; stroke: #9282b4; }
+      .skipped { fill: #faf3e8; stroke: #a98c61; }
+      .stage { fill: #eef5fa; stroke: #7597b3; }
+      .search { fill: #e1eff9; stroke: #497c9f; }
+      .output { fill: #f0f5ed; stroke: #78966e; }
+      .flow { fill: none; stroke: #425c72; stroke-width: 1.6; marker-end: url(#arrow); }
+      .connector { marker-end: none; }
+      .boundary { fill: none; stroke: #7597b3; stroke-dasharray: 3 5; }
+      .retry { stroke-dasharray: 5 4; }
+      text { font-family: sans-serif; text-anchor: middle; fill: #203449; font-size: 16px; }
+      .detail { font-size: 14px; }
+      .heading { font-weight: bold; }
+    </style>
+  </defs>
+
+  <rect class="python" x="17" y="12" width="280" height="62" rx="8"/>
+  <text class="heading" x="157" y="37">Register a rule in Newclid</text>
+  <text class="detail" x="157" y="58">with_additional_rules</text>
+
+  <path class="flow" d="M157 74 V102"/>
+  <rect class="python" x="17" y="102" width="280" height="62" rx="8"/>
+  <text class="heading" x="157" y="127">Yuclid adapter</text>
+  <text class="detail" x="157" y="148">Write temporary files and launch DDAR</text>
+
+  <rect class="stage" x="323" y="102" width="280" height="62" rx="8"/>
+  <text class="heading" x="463" y="127">Run Yuclid directly</text>
+  <text class="detail" x="463" y="148">Supply the rule and problem files</text>
+
+  <path class="flow" d="M157 164 V182 H310 V202"/>
+  <path class="flow connector" d="M463 164 V182 H310"/>
+  <g transform="translate(0 190)">
+    <rect class="stage" x="140" y="12" width="340" height="62" rx="8"/>
+    <text class="heading" x="310" y="37">Read the rule and the problem</text>
+    <text class="detail" x="310" y="58">RuleSchema and problem points</text>
+
+    <rect class="boundary" x="6" y="96" width="608" height="465" rx="10"/>
+    <text class="heading" x="96" y="119">TheoremMatcher</text>
+    <path class="flow" d="M310 74 V132"/>
+    <rect class="stage" x="140" y="132" width="340" height="62" rx="8"/>
+    <text class="heading" x="310" y="157">Dispatch matching</text>
+    <text class="detail" x="310" y="178">Built-in matchers and GenericRuleMatcher</text>
+
+    <path class="flow" d="M310 194 V222"/>
+    <rect class="stage" x="140" y="222" width="340" height="62" rx="8"/>
+    <text class="heading" x="310" y="247">Validate and plan each custom rule</text>
+    <text class="detail" x="310" y="268">RulePlan records how predicates guide the search</text>
+    <path class="flow" d="M480 253 H494"/>
+    <rect class="skipped" x="494" y="222" width="113" height="62" rx="8"/>
+    <text class="heading" x="550" y="247">Skip rule</text>
+    <text class="detail" x="550" y="268">If invalid</text>
+
+    <path class="flow" d="M310 284 V312"/>
+    <rect class="search" x="140" y="312" width="340" height="82" rx="8"/>
+    <text class="heading" x="310" y="337">Search for point assignments</text>
+    <text class="detail" x="310" y="358">Providers suggest points and check predicates</text>
+    <text class="detail" x="310" y="378">using the geometry cache where applicable</text>
+
+    <path class="flow" d="M310 394 V437"/>
+    <text class="detail" x="391" y="420">Complete assignment</text>
+    <rect class="stage" x="140" y="437" width="340" height="62" rx="8"/>
+    <text class="heading" x="310" y="462">Build and check a theorem</text>
+    <text class="detail" x="310" y="483">Keep it if the numerical checks pass</text>
+
+    <path class="flow retry connector" d="M140 468 H67 V434"/>
+    <path class="flow retry" d="M67 392 V353 H140"/>
+    <text class="detail" x="67" y="407">
+      <tspan x="67">Try the next</tspan>
+      <tspan x="67" dy="17">assignment</tspan>
+    </text>
+
+    <path class="flow connector" d="M310 499 V517"/>
+    <text class="detail" x="310" y="538">Collect built-in and custom theorem candidates</text>
+    <path class="flow" d="M310 546 V579 H157 V598"/>
+    <path class="flow" d="M310 579 H463 V598"/>
+
+    <rect class="output" x="17" y="598" width="280" height="62" rx="8"/>
+    <text class="heading" x="157" y="623">Match mode</text>
+    <text class="detail" x="157" y="644">List theorem candidates</text>
+
+    <rect class="output" x="323" y="598" width="280" height="82" rx="8"/>
+    <text class="heading" x="463" y="623">DDAR mode</text>
+    <text class="detail" x="463" y="644">Use candidates during proof search</text>
+    <text class="detail" x="463" y="664">Return the proof as text or JSON</text>
+  </g>
+
+  <path class="flow" d="M463 870 V909"/>
+  <text class="detail" x="537" y="893">JSON to Newclid</text>
+  <rect class="python" x="323" y="909" width="280" height="62" rx="8"/>
+  <text class="heading" x="463" y="934">Read deductions in Newclid</text>
+  <text class="detail" x="463" y="955">Look up the original rule by ID</text>
+</svg>

@@ -1,7 +1,35 @@
+from random import Random
+
 import numpy as np
 import pytest
 from newclid.api import GeometricSolverBuilder
 from newclid.jgex.problem_builder import JGEXProblemBuilder
+from newclid.predicate_types import PredicateArgument
+from newclid.predicates import predicate_class_from_type
+from newclid.predicates._index import PredicateType
+from newclid.problem import PredicateConstruction
+
+
+@pytest.mark.parametrize("name", ["aconst", "lconst", "l2const", "rconst", "r2const"])
+def test_rule_constant_preparation_preserves_goal_semantics(name):
+    predicate_class = predicate_class_from_type(PredicateType(name))
+    points = ("B", "A") if name in {"lconst", "l2const"} else ("D", "C", "B", "A")
+    random = Random(42)
+    for i in range(50):
+        numerator = random.randint(1, 1000)
+        denominator = random.randint(1, 1000)
+        literal = f"{numerator}/{denominator}"
+        if name == "aconst":
+            literal = f"{numerator}o" if i % 2 else f"{numerator}pi/{denominator}"
+        args = tuple(PredicateArgument(arg) for arg in (*points, literal))
+        prepared_args = predicate_class.prepare_rule_arguments(args)
+
+        # Rules keep their variable positions; goals may reorder points and invert ratios.
+        assert prepared_args[:-1] == args[:-1]
+        assert predicate_class.prepare_rule_arguments(prepared_args) == prepared_args
+        assert PredicateConstruction.from_tuple((name, *prepared_args)) == (
+            PredicateConstruction.from_tuple((name, *args))
+        ), (name, literal)
 
 
 class TestConstants:

@@ -1,13 +1,73 @@
+import json
 import logging
+import subprocess
 
 import numpy as np
 import pytest
 from newclid.agent.follow_deductions import FollowDeductions
-from newclid.api import GeometricSolverBuilder
+from newclid.all_rules import DEFAULT_RULES
+from newclid.api import GeometricSolverBuilder, PythonDefault
 from newclid.jgex.problem_builder import JGEXProblemBuilder
+from newclid.problem import PredicateConstruction
 from newclid.rule import Rule
 from py_yuclid.api_default import HEDefault
-from py_yuclid.yuclid_adapter import YuclidAdapter
+from py_yuclid.yuclid_adapter import (
+    YUCLID_PATH,
+    YuclidAdapter,
+    _predicate_to_yuclid,
+    _write_custom_rule_setup,
+)
+
+
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    [
+        ("aconst D C B A 1pi/2", "aconst D C B A 1/2"),
+        ("aconst A B A C 90o", "aconst A B A C 1/2"),
+        ("aconst A B C D 270o", "aconst A B C D 1/2"),
+        ("aconst A B C D -90o", "aconst A B C D 1/2"),
+        ("aconst A B C D 0pi/2", "aconst A B C D 0/1"),
+        ("rconst D C B A 6/4", "rconst D C B A 3/2"),
+        ("r2const D C B A 6/4", "r2const D C B A 3/2"),
+        ("lconst B A 3", "lconst B A 3/1"),
+        ("l2const B A 9", "l2const B A 9/1"),
+        ("coll C B A A", "coll C B A A"),
+        ("cong A B A C", "cong A B A C"),
+    ],
+)
+def test_custom_rule_serialization_preserves_variable_positions(predicate, expected):
+    rule = Rule(
+        id="constant_serialization",
+        description="Constant serialization",
+        premises_txt=(predicate,),
+        conclusions_txt=(predicate,),
+    )
+    original_rule = rule.model_dump()
+
+    assert _write_custom_rule_setup(rule) == [
+        f"rule {rule.id} {' '.join(sorted(rule.variables))}",
+        f"require {expected}",
+        f"conclude {expected}",
+        "end",
+    ]
+    assert rule.model_dump() == original_rule
+
+
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    [
+        ("aconst b a d c 270o", "aconst a b c d 1/2"),
+        ("rconst d c b a 2/3", "rconst a b c d 3/2"),
+        ("r2const d c b a 2/3", "r2const a b c d 3/2"),
+        ("lconst b a 3", "lconst a b 3/1"),
+        ("l2const b a 9", "l2const a b 9/1"),
+    ],
+)
+def test_goal_constant_serialization_keeps_existing_canonicalization(
+    predicate, expected
+):
+    construction = PredicateConstruction.from_str(predicate)
+    assert _predicate_to_yuclid(construction) == expected
 
 
 class TestYuclidCustomRuleIntegration:
@@ -21,6 +81,110 @@ class TestYuclidCustomRuleIntegration:
         self.solver_builder = GeometricSolverBuilder(
             rng=self.rng, api_default=HEDefault(self.he_adapter)
         ).with_deductive_agent(self.follow_deductions)
+
+    def test_builder_configures_custom_rules_and_clears_previous_rules(
+        self, monkeypatch
+    ):
+        custom_rule = Rule(
+            id="custom_collinearity",
+            description="Reorder collinear points",
+            premises_txt=("coll A B C",),
+            conclusions_txt=("coll C B A",),
+        )
+        problem_setup = self.problem_builder.with_problem_from_txt(
+            "a b = segment a b; m = midpoint m a b ? cong a m b m"
+        ).build()
+
+        def unexpected_run():
+            pytest.fail("Building the solver must not invoke Yuclid")
+
+        monkeypatch.setattr(self.he_adapter, "_run_yuclid", unexpected_run)
+        self.solver_builder.with_additional_rules([custom_rule]).build(problem_setup)
+        assert self.he_adapter.custom_rules == [custom_rule]
+        assert self.he_adapter.goals == list(problem_setup.goals)
+        assert self.he_adapter.problem_name == problem_setup.name
+
+        self.solver_builder.with_rules(list(DEFAULT_RULES)).build(problem_setup)
+        assert self.he_adapter.custom_rules == []
+        assert self.he_adapter.goals == list(problem_setup.goals)
+
+    def test_python_backend_accepts_selected_rules(self):
+        problem_setup = self.problem_builder.with_problem_from_txt(
+            "a b = segment a b; m = midpoint m a b ? cong a m b m"
+        ).build()
+        builder = GeometricSolverBuilder(
+            rng=self.rng, api_default=PythonDefault(use_sympy_ar=False)
+        )
+
+        solver = builder.build(problem_setup)
+        assert solver.rules == builder.rules
+
+    @pytest.mark.parametrize("file_kind", ["missing", "directory"])
+    def test_unreadable_custom_rule_file_is_an_error(self, tmp_path, file_kind):
+        rules_file = tmp_path / "rules.txt"
+        if file_kind == "directory":
+            rules_file.mkdir()
+
+        result = subprocess.run(
+            [
+                str(YUCLID_PATH),
+                "--mode",
+                "match",
+                "--use-json",
+                "--input-additional-rules-file",
+                str(rules_file),
+            ],
+            input="point a 0 0\npoint b 1 0\n",
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 1
+        assert "custom rules file" in result.stderr
+        assert str(rules_file) in result.stderr
+        assert not result.stdout
+
+    @pytest.mark.parametrize("angle", ["1pi/2", "90o", "270o", "-90o"])
+    def test_custom_angle_rule_reaches_yuclid(self, tmp_path, angle):
+        rule = Rule(
+            id="custom_right_angle",
+            description="A right angle gives perpendicular lines",
+            premises_txt=(f"aconst A B C D {angle}",),
+            conclusions_txt=("perp A B C D",),
+        )
+        self.he_adapter.custom_rules = [rule]
+        rules_file = tmp_path / "rules.txt"
+        rules_file.write_text(self.he_adapter.precomputation_custom_rules_str)
+
+        result = subprocess.run(
+            [
+                str(YUCLID_PATH),
+                "--mode",
+                "match",
+                "--use-json",
+                "--log-level",
+                "warning",
+                "--input-additional-rules-file",
+                str(rules_file),
+            ],
+            input="point a 0 0\npoint b 1 0\npoint c 0 2\npoint d 0 3\n",
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        theorems = json.loads(result.stdout)
+        custom_theorems = [
+            theorem for theorem in theorems if theorem["name"] == rule.id
+        ]
+
+        # Match mode checks our rule directly, even if built-in rules could prove the goal.
+        assert len(custom_theorems) == 8
+        assert any(
+            theorem["hypotheses"]
+            == [{"name": "aconst", "points": ["a", "b", "c", "d", "1/2"]}]
+            and theorem["conclusions"]
+            == [{"name": "perp", "points": ["a", "b", "c", "d"]}]
+            for theorem in custom_theorems
+        )
 
     def test_custom_rule_passed_via_temp_file(self):
         """

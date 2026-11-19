@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="600" viewBox="0 0 640 600">
+  <title>One call of the custom-rule search</title>
+  <desc>Check ready validators and return on failure. For a complete mapping, build and validate a theorem, then return. Otherwise choose a predicate and try extensions. Recurse for an accepted extension and restore the mapping on return. Repeat until the provider has no extensions left.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#425c72"/>
+    </marker>
+    <style>
+      rect { fill: #eef5fa; stroke: #7597b3; }
+      .result { fill: #f0f5ed; stroke: #78966e; }
+      .stop { fill: #faf3e8; stroke: #a98c61; }
+      .arrow { fill: none; stroke: #425c72; stroke-width: 1.6; marker-end: url(#arrow); }
+      .loop { stroke-dasharray: 5 4; }
+      text { font: 15px sans-serif; fill: #203449; text-anchor: middle; }
+      .heading { font-weight: bold; }
+      .label { font-size: 13px; }
+    </style>
+  </defs>
+
+  <rect x="96" y="12" width="286" height="42" rx="8"/>
+  <text class="heading" x="239" y="38">Enter search with the current mapping</text>
+  <path class="arrow" d="M239 54 V82"/>
+
+  <rect x="96" y="82" width="286" height="42" rx="8"/>
+  <text class="heading" x="239" y="108">Check ready validators</text>
+  <path class="arrow" d="M382 103 H474"/>
+  <text class="label" x="428" y="94">Check fails</text>
+  <rect class="stop" x="474" y="82" width="156" height="42" rx="8"/>
+  <text x="552" y="108">Return to parent</text>
+  <path class="arrow" d="M239 124 V160"/>
+  <text class="label" x="286" y="145">Checks pass</text>
+
+  <rect x="96" y="160" width="286" height="42" rx="8"/>
+  <text class="heading" x="239" y="186">Are all variables assigned?</text>
+  <path class="arrow" d="M382 181 H440"/>
+  <text class="label" x="409" y="172">Yes</text>
+  <rect class="result" x="440" y="147" width="190" height="68" rx="8"/>
+  <text class="heading" x="535" y="170">Build and check theorem</text>
+  <text class="label" x="535" y="190">Keep it if valid, then return</text>
+  <path class="arrow" d="M239 202 V238"/>
+  <text class="label" x="258" y="224">No</text>
+
+  <rect x="96" y="238" width="286" height="58" rx="8"/>
+  <text class="heading" x="239" y="261">Choose a predicate</text>
+  <text class="label" x="239" y="280">Use estimates for the current mapping</text>
+  <path class="arrow" d="M239 296 V324"/>
+
+  <rect x="96" y="324" width="286" height="42" rx="8"/>
+  <text class="heading" x="239" y="350">Ask the provider for the next extension</text>
+  <path class="arrow" d="M382 345 H474"/>
+  <text class="label" x="428" y="336">Exhausted</text>
+  <rect class="stop" x="474" y="324" width="156" height="42" rx="8"/>
+  <text x="552" y="350">Return to parent</text>
+  <path class="arrow" d="M239 366 V394"/>
+
+  <rect x="96" y="394" width="286" height="58" rx="8"/>
+  <text class="heading" x="239" y="417">Apply and check the extension</text>
+  <text class="label" x="239" y="437">Check newly bound generators if still partial</text>
+  <path class="arrow" d="M239 452 V485"/>
+  <text class="label" x="281" y="473">Accepted</text>
+
+  <rect x="96" y="485" width="286" height="42" rx="8"/>
+  <text class="heading" x="239" y="511">Recurse with the extended mapping</text>
+  <path class="arrow" d="M239 527 V551"/>
+  <path class="arrow" d="M382 423 H436 V572 H382"/>
+  <text class="label" x="473" y="484">Rejected</text>
+
+  <rect x="96" y="551" width="286" height="42" rx="8"/>
+  <text class="heading" x="239" y="577">Restore the parent mapping</text>
+  <path class="arrow loop" d="M96 572 H25 V345 H96"/>
+  <text class="label" x="61" y="483">Retry</text>
+</svg>

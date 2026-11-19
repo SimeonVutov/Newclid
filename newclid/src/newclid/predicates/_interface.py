@@ -13,9 +13,16 @@ if TYPE_CHECKING:
 
 class PredicateInterface(ABC, BaseModel):
     """
-    When the args are passed in functions other than parse and to_tokens,
-    the orders are guaranteed to be canonique.
+    When the args are passed in functions other than preparse, prepare_rule_arguments
+    and to_tokens, the orders are guaranteed to be canonique.
     """
+
+    @staticmethod
+    def prepare_rule_arguments(
+        args: tuple[PredicateArgument, ...],
+    ) -> tuple[PredicateArgument, ...]:
+        """Normalize rule constants without reordering or removing point arguments."""
+        return args
 
     @staticmethod
     @abstractmethod

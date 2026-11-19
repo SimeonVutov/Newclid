@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 if TYPE_CHECKING:
     from newclid.api import DeductiveAgent, Deductor, RuleMatcher
     from newclid.proof_state import ProofState
+    from newclid.rule import Rule
 
 
 class APIDefault(ABC):
@@ -24,5 +25,5 @@ class APIDefault(ABC):
         """Return the default deductive agent for the API."""
 
     @abstractmethod
-    def callback(self, proof_state: ProofState) -> None:
-        """Callback function to be called after each step of the proof."""
+    def callback(self, proof_state: ProofState, rules: Sequence[Rule]) -> None:
+        """Configure the backend for the proof state and selected rules."""

@@ -27,6 +27,15 @@ class ConstantRatio(PredicateInterface):
     value: Fraction
 
     @staticmethod
+    def prepare_rule_arguments(
+        args: tuple[PredicateArgument, ...],
+    ) -> tuple[PredicateArgument, ...]:
+        if len(args) != 5:
+            return args
+        a, b, c, d, r = args
+        return (a, b, c, d, PredicateArgument(fraction_to_ratio(str_to_fraction(r))))
+
+    @staticmethod
     def preparse(
         args: tuple[PredicateArgument, ...],
     ) -> tuple[PredicateArgument, ...] | None:

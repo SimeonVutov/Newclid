@@ -4,7 +4,6 @@
 #include "lazy_geometry_cache.hpp"     
 #include "rule_plan.hpp"
 #include "geometry_cache_types.hpp"
-#include "numbers/util.hpp"
 #include "type/dist.hpp"
 #include "statement/cong.hpp"
 
@@ -54,27 +53,6 @@ namespace Yuclid {
             return assignments;
         }
 
-        // TODO: Cache This is a temporary replacement, once a key is added to the segment buckets, remove this
-        const std::vector<PointPairId>* get_bucket_for_key(
-            const double key,
-            const LazyGeometryCache &cache
-        ) {
-            const auto &all_point_pairs = cache.point_pairs();
-
-            for (const auto &bucket : cache.segment_length_buckets().buckets) {
-                // buckets are guaranteed to contain at least 2 elements
-                double min_len = static_cast<double>(SquaredDist(cache.point(all_point_pairs[bucket.front()].first), cache.point(all_point_pairs[bucket.front()].second)));
-                double max_len = static_cast<double>(SquaredDist(cache.point(all_point_pairs[bucket.back()].first), cache.point(all_point_pairs[bucket.back()].second)));
-                
-                // Inclusive lower and exclusive upper boundary, shouldn't be a concern generally, but still, it should resolve the potential bucket overlap issue.
-                if (key >= (min_len - EPS) && key < (max_len + EPS)) {
-                    return &bucket;
-                }
-            }
-
-            return nullptr;
-        }
-        
         // Pairwise variable check
         // If variables are the same, points must be the same. 
         // If variables are different, points must be different.
@@ -138,16 +116,11 @@ namespace Yuclid {
             case 0b1100: // AB assigned, CD free
             case 0b0011: // AB free, CD assigned
             {
-                // The length is known! 
-                double assigned_length = 0;
-                if((state_mask & 0b1100) == 0b1100) {
-                    assigned_length = static_cast<double>(SquaredDist(cache.point(*assignments[0]), cache.point(*assignments[1])));
-                }
-                else {
-                    assigned_length = static_cast<double>(SquaredDist(cache.point(*assignments[2]), cache.point(*assignments[3]))); 
-                }
-                
-                const auto bucket_ptr = get_bucket_for_key(assigned_length, cache);
+                const bool ab_known = (state_mask & 0b1100) == 0b1100;
+                const auto bucket_ptr = cache.segment_length_bucket_for_pair(
+                    ab_known ? *assignments[0] : *assignments[2],
+                    ab_known ? *assignments[1] : *assignments[3]
+                );
                 if(bucket_ptr != nullptr) {
                     // Subtract 1 to exclude the segment we already know
                     // Multiply by 2 because a segment XY can be mapped as XY or YX!
@@ -303,12 +276,10 @@ namespace Yuclid {
                 std::size_t var1_idx = local_var_indexes[is_ab_known ? 2 : 0];
                 std::size_t var2_idx = local_var_indexes[is_ab_known ? 3 : 1];
 
-                double assigned_length = static_cast<double>(SquaredDist(
-                    cache.point(is_ab_known ? *assignments[0] : *assignments[2]), 
-                    cache.point(is_ab_known ? *assignments[1] : *assignments[3])
-                ));
-
-                const auto bucket_ptr = get_bucket_for_key(assigned_length, cache);
+                const auto bucket_ptr = cache.segment_length_bucket_for_pair(
+                    is_ab_known ? *assignments[0] : *assignments[2],
+                    is_ab_known ? *assignments[1] : *assignments[3]
+                );
                 if(bucket_ptr != nullptr) {
                     for(PointPairId point_pair_id: *bucket_ptr){
                         const PointPair &pair = all_point_pairs[point_pair_id];
@@ -340,40 +311,47 @@ namespace Yuclid {
                 // By inverting the mask (~state_mask), the missing '0' becomes a '1'.
                 std::size_t missing_bit = (~state_mask) & 0b1111;
                 std::size_t target_idx;
-                double length;
+                ProblemPointIndex known_first;
+                ProblemPointIndex known_second;
                 ProblemPointIndex anchor_point;
                 
                 if (missing_bit == 0b0001) { // D missing
                     // D is missing. We know A, B, and C.
                     target_idx = local_var_indexes[3];
                     // We know the length because A and B are fully bound.
-                    length = static_cast<double>(SquaredDist(cache.point(*assignments[0]), cache.point(*assignments[1])));
+                    known_first = *assignments[0];
+                    known_second = *assignments[1];
                     // Since C is known, the new segment must connect to C. C is our anchor.
                     anchor_point = *assignments[2];
                 } 
                 else if (missing_bit == 0b0010) { // C missing
                     target_idx = local_var_indexes[2];
                     // We know the length because A and B are fully bound.
-                    length = static_cast<double>(SquaredDist(cache.point(*assignments[0]), cache.point(*assignments[1])));
+                    known_first = *assignments[0];
+                    known_second = *assignments[1];
                     // Since D is known, the new segment must connect to D. D is our anchor.
                     anchor_point = *assignments[3];
                 } 
                 else if (missing_bit == 0b0100) { // B missing
                     target_idx = local_var_indexes[1];
                     // We know the length because C and D are fully bound.
-                    length = static_cast<double>(SquaredDist(cache.point(*assignments[2]), cache.point(*assignments[3])));
+                    known_first = *assignments[2];
+                    known_second = *assignments[3];
                     // Since A is known, the new segment must connect to A. A is our anchor.
                     anchor_point = *assignments[0];
                 } 
                 else { // A missing
                     target_idx = local_var_indexes[0];
                     // We know the length because C and D are fully bound.
-                    length = static_cast<double>(SquaredDist(cache.point(*assignments[2]), cache.point(*assignments[3])));
+                    known_first = *assignments[2];
+                    known_second = *assignments[3];
                     // Since B is known, the new segment must connect to B. B is our anchor.
                     anchor_point = *assignments[1];
                 }
 
-                const auto bucket_ptr = get_bucket_for_key(length, cache);
+                const auto bucket_ptr = cache.segment_length_bucket_for_pair(
+                    known_first, known_second
+                );
                 if (bucket_ptr != nullptr) {
                     for (PointPairId id : *bucket_ptr) {
                         const PointPair &pair = all_point_pairs[id];

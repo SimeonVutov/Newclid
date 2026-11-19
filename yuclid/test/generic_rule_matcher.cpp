@@ -9,10 +9,29 @@
 #include "theorem.hpp"
 #include "statement/coll.hpp"
 #include "statement/cong.hpp"
+#include <algorithm>
+#include <random>
+#include <sstream>
 #include <vector>
 
 using namespace std;
 using namespace Yuclid;
+
+namespace {
+    std::vector<std::string> theorem_signatures(const std::vector<Theorem> &theorems) {
+        std::vector<std::string> signatures;
+        signatures.reserve(theorems.size());
+        for(const Theorem &theorem: theorems) {
+            std::ostringstream stream;
+            stream << theorem;
+            signatures.push_back(stream.str());
+        }
+
+        // Preserve duplicate entries while ignoring traversal order.
+        std::sort(signatures.begin(), signatures.end());
+        return signatures;
+    }
+}
 
 BOOST_AUTO_TEST_SUITE(generic_matcher_suite)
 
@@ -356,5 +375,174 @@ BOOST_AUTO_TEST_CASE(generic_match_optimized_skip_unsupported){
     BOOST_REQUIRE_EQUAL(results.size(), 0);
 }
 
+BOOST_AUTO_TEST_CASE(optimized_match_accepts_valid_rules_without_matches) {
+    Problem prob;
+    (void)prob.add_point("P0", 0.0, 0.0);
+    (void)prob.add_point("P1", 1.0, 0.0);
+    (void)prob.add_point("P2", 3.0, 0.0);
+    const std::vector<RuleSchema> rules = {build_simple_schema(
+        "unequal_lengths", {"A", "B", "C"},
+        "coll", {"A", "B", "C"},
+        "cong", {"A", "B", "A", "C"}
+    )};
+    GenericRuleMatcher matcher(&prob, rules);
+
+    // No point is the midpoint of the other two, so every conclusion is rejected.
+    BOOST_CHECK(matcher.optimized_match().empty());
+}
+
+
+/**
+ * @brief Near-equal lengths must produce the same theorems on both matching paths.
+ */
+BOOST_AUTO_TEST_CASE(optimized_match_preserves_near_equal_congruences) {
+    for(double scale: {0.00001, 1.0, 1000000.0}) {
+        BOOST_TEST_CONTEXT("scale=" << scale) {
+            Problem prob;
+            (void)prob.add_point("P0", 0.0, 0.0);
+            (void)prob.add_point("P1", 10.0 * scale, 0.0);
+            (void)prob.add_point("P2", 0.0, 20.0 * scale);
+            (void)prob.add_point("P3", 10.00000001 * scale, 20.0 * scale);
+
+            std::vector<RuleSchema> rules = {build_simple_schema(
+                "near_equal_cong", {"A", "B", "C", "D"},
+                "cong", {"A", "B", "C", "D"},
+                "cong", {"A", "B", "C", "D"}
+            )};
+            GenericRuleMatcher matcher(&prob, rules);
+            const auto expected = theorem_signatures(matcher.match());
+            const auto actual = theorem_signatures(matcher.optimized_match());
+
+            BOOST_REQUIRE_EQUAL(expected.size(), 24U);
+            BOOST_CHECK_EQUAL_COLLECTIONS(actual.begin(), actual.end(), expected.begin(), expected.end());
+        }
+    }
+}
+
+/**
+ * @brief Generated problems check pruning, backtracking, and provider combinations.
+ */
+BOOST_AUTO_TEST_CASE(optimized_match_matches_naive_on_generated_problems) {
+    const std::vector<RuleSchema> rules = {
+        {"coll", {"A", "B", "C"},
+            {{"coll", {"A", "B", "C"}}}, {{"coll", {"C", "B", "A"}}}},
+        {"disjoint", {"A", "B", "C", "D", "E", "F"},
+            {{"coll", {"A", "B", "C"}}, {"coll", {"D", "E", "F"}}},
+            {{"coll", {"A", "B", "C"}}}},
+        {"shared", {"A", "B", "C", "D"},
+            {{"coll", {"A", "B", "C"}}, {"coll", {"B", "C", "D"}}},
+            {{"coll", {"A", "B", "D"}}}},
+        {"cong", {"A", "B", "C", "D"},
+            {{"cong", {"A", "B", "C", "D"}}}, {{"cong", {"A", "B", "C", "D"}}}},
+        {"repeated", {"A", "B", "C"},
+            {{"cong", {"A", "B", "A", "C"}}}, {{"cong", {"A", "C", "A", "B"}}}},
+        {"mixed", {"M", "A", "B", "C"},
+            {{"cong", {"A", "B", "A", "C"}}, {"midp", {"M", "B", "C"}}},
+            {{"cong", {"A", "B", "A", "C"}}}},
+        {"indirect", {"A", "B", "C", "D", "E"},
+            {{"cong", {"A", "B", "C", "D"}}, {"coll", {"A", "B", "C"}}, {"coll", {"C", "D", "E"}}},
+            {{"coll", {"A", "B", "C"}}}},
+        {"parallel", {"A", "B", "C", "D", "E"},
+            {{"para", {"A", "B", "C", "D"}}, {"coll", {"C", "D", "E"}}},
+            {{"para", {"A", "B", "C", "D"}}}},
+        {"perpendicular", {"A", "B", "C", "D"},
+            {{"perp", {"A", "B", "C", "D"}}}, {{"perp", {"C", "D", "A", "B"}}}},
+        {"rejected_conclusion", {"A", "B", "C"},
+            {{"coll", {"A", "B", "C"}}}, {{"cong", {"A", "B", "A", "C"}}}}
+    };
+
+    std::size_t nonempty_cases = 0;
+    // Run each fixed layout once and keep all the seeded layouts.
+    for(unsigned seed: {0U, 1U, 2U, 3U, 7U, 11U, 15U, 19U}) {
+        Problem prob;
+        std::mt19937 random(seed);
+        for(int i = 0; i < 7; ++i) {
+            double x = i;
+            double y = 0;
+            switch(seed % 4) {
+                case 0: break;
+                case 1: y = i * i; break;
+                case 2: x = i % 3; y = i / 3; break;
+                default: y = random() % 4; break;
+            }
+            (void)prob.add_point("P" + std::to_string(i), x, y);
+        }
+
+        std::vector<std::string> combined_expected;
+        for(const RuleSchema &schema: rules) {
+            BOOST_TEST_CONTEXT("seed=" << seed << " rule=" << schema.id) {
+                const std::vector<RuleSchema> selected = {schema};
+                GenericRuleMatcher matcher(&prob, selected);
+                const auto expected = theorem_signatures(matcher.match());
+                const auto actual = theorem_signatures(matcher.optimized_match());
+
+                BOOST_CHECK_EQUAL_COLLECTIONS(actual.begin(), actual.end(), expected.begin(), expected.end());
+                nonempty_cases += !expected.empty();
+                combined_expected.insert(combined_expected.end(), expected.begin(), expected.end());
+            }
+        }
+
+        BOOST_TEST_CONTEXT("combined seed=" << seed) {
+            std::sort(combined_expected.begin(), combined_expected.end());
+            const auto actual = theorem_signatures(GenericRuleMatcher(&prob, rules).optimized_match());
+            BOOST_CHECK_EQUAL_COLLECTIONS(actual.begin(), actual.end(), combined_expected.begin(), combined_expected.end());
+        }
+    }
+    BOOST_CHECK_GT(nonempty_cases, 0U);
+}
+
+BOOST_AUTO_TEST_CASE(optimized_match_rejects_collinearity_on_a_parabola) {
+    Problem prob;
+    for(int i = 0; i < 12; ++i) {
+        (void)prob.add_point("P" + std::to_string(i), i, i * i);
+    }
+    const std::vector<RuleSchema> rules = {
+        {"disjoint", {"A", "B", "C", "D", "E", "F"},
+            {{"coll", {"A", "B", "C"}}, {"coll", {"D", "E", "F"}}},
+            {{"coll", {"A", "B", "C"}}}}
+    };
+    GenericRuleMatcher matcher(&prob, rules);
+
+    // A line cannot intersect the parabola in three distinct points.
+    BOOST_CHECK(matcher.optimized_match().empty());
+}
+
+BOOST_AUTO_TEST_CASE(optimized_match_preserves_dense_mapping_multiplicity) {
+    Problem prob;
+    for(int i = 0; i < 6; ++i) {
+        (void)prob.add_point("P" + std::to_string(i), i, 0.0);
+    }
+    const std::vector<RuleSchema> rules = {
+        {"disjoint", {"A", "B", "C", "D", "E", "F"},
+            {{"coll", {"A", "B", "C"}}, {"coll", {"D", "E", "F"}}},
+            {{"coll", {"A", "B", "C"}}}}
+    };
+    GenericRuleMatcher matcher(&prob, rules);
+    const auto expected = theorem_signatures(matcher.match());
+    const auto actual = theorem_signatures(matcher.optimized_match());
+
+    // Every injective mapping is valid: P(6, 6) = 720, including normalized duplicates.
+    BOOST_REQUIRE_EQUAL(expected.size(), 720U);
+    BOOST_CHECK_EQUAL_COLLECTIONS(actual.begin(), actual.end(), expected.begin(), expected.end());
+}
+
+BOOST_AUTO_TEST_CASE(optimized_match_handles_more_than_64_predicates) {
+    Problem prob;
+    for(int i = 0; i < 4; ++i) {
+        (void)prob.add_point("P" + std::to_string(i), i, 0.0);
+    }
+    RuleSchema schema = build_simple_schema(
+        "many_predicates", {"A", "B", "C", "D"},
+        "coll", {"A", "B", "C"}, "coll", {"A", "B", "C", "D"}
+    );
+    schema.hypotheses.assign(65, {"coll", {"A", "B", "C"}});
+    const std::vector<RuleSchema> rules = {schema};
+    GenericRuleMatcher matcher(&prob, rules);
+    const auto expected = theorem_signatures(matcher.match());
+    const auto actual = theorem_signatures(matcher.optimized_match());
+
+    BOOST_REQUIRE_EQUAL(expected.size(), 24U);
+    BOOST_CHECK_EQUAL_COLLECTIONS(actual.begin(), actual.end(), expected.begin(), expected.end());
+}
 
 BOOST_AUTO_TEST_SUITE_END()

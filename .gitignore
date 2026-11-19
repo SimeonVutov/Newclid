@@ -106,6 +106,9 @@ cmake_install.cmake
 *.folded
 *.perf
 *.svg
+!/docs/manual/development/yuclid/custom-rule-flow.svg
+!/docs/manual/development/yuclid/matching-search-flow.svg
+!/docs/manual/development/yuclid/matching-backtracking.svg
 *.data
 *.old
 

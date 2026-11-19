@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
 #include <vector>
 
 #include "matchers/matching_types.hpp"
@@ -29,7 +30,10 @@ namespace Yuclid {
      * combinations.
      */
     struct SegmentBuckets {
+        static constexpr PointPairId no_bucket = std::numeric_limits<PointPairId>::max();
+
         std::vector<std::vector<PointPairId>> buckets;
+        std::vector<PointPairId> bucket_index_by_point_pair;
     };
 
     /**

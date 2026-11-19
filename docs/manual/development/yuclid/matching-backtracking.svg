@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="343" viewBox="0 0 640 343">
+  <title>Backtracking between two point assignments</title>
+  <desc>The matcher tries a partial assignment for A, B, and C. It assigns x to M, fails the midpoint check, undoes the assignment for M, and tries m. That branch produces a valid theorem.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#425c72"/>
+    </marker>
+    <style>
+      rect { fill: #eef5fa; stroke: #7597b3; }
+      .valid { fill: #f0f5ed; stroke: #78966e; }
+      .invalid { fill: #faf3e8; stroke: #a98c61; }
+      .arrow { fill: none; stroke: #425c72; stroke-width: 1.6; marker-end: url(#arrow); }
+      .backtrack { stroke-dasharray: 5 4; }
+      text { font: 15px sans-serif; fill: #203449; text-anchor: middle; }
+      .heading { font-weight: bold; }
+      .label { font-size: 13px; }
+    </style>
+  </defs>
+
+  <rect x="189" y="12" width="262" height="42" rx="8"/>
+  <text class="heading" x="320" y="38">No point assignments yet</text>
+  <path class="arrow" d="M320 54 V99"/>
+  <text class="label" x="419" y="81">Extend with coll A B C</text>
+
+  <rect x="162" y="99" width="316" height="64" rx="8"/>
+  <text class="heading" x="320" y="124">Partial mapping</text>
+  <text x="320" y="146">A → a, B → b, C → c, M unassigned</text>
+
+  <path class="arrow" d="M253 163 V186 H149 V231"/>
+  <text class="label" x="203" y="208">1. Try M → x</text>
+  <path class="arrow backtrack" d="M106 231 V160 H162"/>
+  <text class="label" x="56" y="176">2. Undo M → x</text>
+
+  <path class="arrow" d="M387 163 V186 H491 V231"/>
+  <text class="label" x="546" y="208">3. Try M → m</text>
+
+  <rect class="invalid" x="10" y="231" width="294" height="100" rx="8"/>
+  <text class="heading" x="157" y="259">Midpoint check fails</text>
+  <text x="157" y="284">|a−x| = 1, |x−b| = 3</text>
+  <text class="label" x="157" y="308">Return to the partial mapping</text>
+
+  <rect class="valid" x="336" y="231" width="294" height="100" rx="8"/>
+  <text class="heading" x="483" y="259">Midpoint check passes</text>
+  <text x="483" y="284">|a−m| = |m−b| = 2</text>
+  <text class="label" x="483" y="308">Build, check, and keep the theorem</text>
+</svg>

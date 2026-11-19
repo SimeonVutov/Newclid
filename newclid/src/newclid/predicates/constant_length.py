@@ -28,6 +28,15 @@ class ConstantLength(PredicateInterface):
     length: Fraction
 
     @staticmethod
+    def prepare_rule_arguments(
+        args: tuple[PredicateArgument, ...],
+    ) -> tuple[PredicateArgument, ...]:
+        if len(args) != 3:
+            return args
+        a, b, length = args
+        return (a, b, PredicateArgument(fraction_to_len(str_to_fraction(length))))
+
+    @staticmethod
     def preparse(
         args: tuple[PredicateArgument, ...],
     ) -> tuple[PredicateArgument, ...] | None:

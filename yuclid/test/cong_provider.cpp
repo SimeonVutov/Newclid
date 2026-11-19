@@ -6,6 +6,8 @@
 #include <string>
 #include <set>
 #include <algorithm>
+#include <array>
+#include <random>
 
 #include "matchers/cong_provider.hpp"
 #include "problem.hpp"
@@ -14,6 +16,8 @@
 #include "matchers/rule_plan.hpp"
 #include "rules/rule_schema.hpp"
 #include "matchers/predicate_matching_metadata.hpp"
+#include "statement/cong.hpp"
+#include "type/dist.hpp"
 
 using namespace Yuclid;
 
@@ -42,6 +46,85 @@ struct CongProviderFixture {
             }
         }
         return pp;
+    }
+
+    // Every numerically valid full mapping must be reachable from each partial binding.
+    std::size_t check_all_binding_states(const std::vector<std::string> &args) {
+        BOOST_REQUIRE_EQUAL(args.size(), 4U);
+        schema.variables.clear();
+        for(const std::string &arg: args) {
+            if(std::find(schema.variables.begin(), schema.variables.end(), arg) == schema.variables.end()) {
+                schema.variables.push_back(arg);
+            }
+        }
+        PlannedPredicate predicate = build_planned_pred(args);
+        LazyGeometryCache cache(prob);
+        std::array<std::size_t, 4> argument_indices;
+        for(std::size_t i = 0; i < args.size(); ++i) {
+            argument_indices[i] = std::find(
+                schema.variables.begin(), schema.variables.end(), args[i]
+            ) - schema.variables.begin();
+        }
+
+        std::vector<ProblemPointIndex> points(schema.variables.size());
+        std::vector<bool> used_points(prob.num_points(), false);
+        std::size_t valid_mappings = 0;
+        auto check_mapping = [&]() {
+            const DistEqDist congruence(
+                Dist(cache.point(points[argument_indices[0]]), cache.point(points[argument_indices[1]])),
+                Dist(cache.point(points[argument_indices[2]]), cache.point(points[argument_indices[3]]))
+            );
+            if(!congruence.check_numerically()) return;
+            ++valid_mappings;
+
+            for(std::size_t mask = 0; mask < (std::size_t{1} << points.size()); ++mask) {
+                BOOST_TEST_CONTEXT("mask=" << mask << " A=" << points[argument_indices[0]]
+                    << " B=" << points[argument_indices[1]] << " C=" << points[argument_indices[2]]
+                    << " D=" << points[argument_indices[3]]) {
+                    MappingState mapping(schema, prob);
+                    for(std::size_t i = 0; i < points.size(); ++i) {
+                        if(mask & (std::size_t{1} << i)) {
+                            BOOST_REQUIRE(mapping.try_apply_assignment(i, points[i]));
+                        }
+                    }
+                    if(mapping.is_complete()) {
+                        BOOST_CHECK(provider.is_satisfied(predicate, mapping, cache));
+                        continue;
+                    }
+
+                    const auto snapshot = mapping.snapshot();
+                    bool found = false;
+                    for(const MappingExtension &extension: provider.generate_extensions(predicate, mapping, cache)) {
+                        if(mapping.try_apply_extension(extension)) {
+                            bool matches = true;
+                            for(std::size_t i = 0; i < points.size(); ++i) {
+                                if(mapping.assigned_point_index(i) != points[i]) matches = false;
+                            }
+                            found = found || matches;
+                        }
+                        mapping.rollback(snapshot);
+                        if(found) break;
+                    }
+                    BOOST_REQUIRE_MESSAGE(found, "Provider omitted a numerically valid mapping");
+                }
+            }
+        };
+
+        auto enumerate = [&](auto &&self, std::size_t variable) -> void {
+            if(variable == points.size()) {
+                check_mapping();
+                return;
+            }
+            for(ProblemPointIndex point = 0; point < prob.num_points(); ++point) {
+                if(used_points[point]) continue;
+                points[variable] = point;
+                used_points[point] = true;
+                self(self, variable + 1);
+                used_points[point] = false;
+            }
+        };
+        enumerate(enumerate, 0);
+        return valid_mappings;
     }
 
     // Helper to consume a generator and return unique assignment signatures
@@ -139,6 +222,55 @@ struct CongProviderFixture {
 };
 
 BOOST_FIXTURE_TEST_SUITE(cong_provider_phase1_suite, CongProviderFixture)
+
+BOOST_AUTO_TEST_CASE(generation_preserves_absolute_tolerance_boundary_matches) {
+    // A first-bucket lookup could select the shorter pair and miss the two longer segments.
+    const std::array<double, 4> lengths = {
+        1.0000000000000001e-5, 1.005e-5, 1.0150000000000001e-5, 1.0200000000000001e-5
+    };
+    for(std::size_t i = 0; i < lengths.size(); ++i) {
+        (void)prob.add_point("A" + std::to_string(i), 0.0, 5.0 * i);
+        (void)prob.add_point("B" + std::to_string(i), lengths[i], 5.0 * i);
+    }
+    BOOST_CHECK_GT(check_all_binding_states({"A", "B", "C", "D"}), 0U);
+}
+
+BOOST_AUTO_TEST_CASE(generation_preserves_relative_tolerance_matches) {
+    (void)prob.add_point("P0", 0.0, 0.0);
+    (void)prob.add_point("P1", 1000.0, 0.0);
+    (void)prob.add_point("P2", 0.0, 3000.0);
+    (void)prob.add_point("P3", 1000.5, 3000.0);
+    BOOST_CHECK_GT(check_all_binding_states({"A", "B", "C", "D"}), 0U);
+}
+
+BOOST_AUTO_TEST_CASE(generation_matches_numerical_oracle_on_generated_problems) {
+    const std::vector<std::vector<std::string>> patterns = {
+        {"A", "B", "C", "D"}, {"A", "B", "A", "C"},
+        {"A", "B", "C", "B"}, {"A", "B", "A", "B"}, {"A", "B", "B", "A"}
+    };
+    for(unsigned seed = 0; seed < 12; ++seed) {
+        for(double scale: {0.00001, 1.0, 1000000.0}) {
+            BOOST_TEST_CONTEXT("seed=" << seed << " scale=" << scale) {
+                CongProviderFixture fixture;
+                std::mt19937 random(seed);
+                const double width = (10 + random() % 10) * scale;
+                const double height = (30 + random() % 10) * scale;
+                const double offset = width * (random() % 100) / 100000.0;
+                (void)fixture.prob.add_point("P0", 0.0, 0.0);
+                (void)fixture.prob.add_point("P1", width, 0.0);
+                (void)fixture.prob.add_point("P2", 0.0, height);
+                (void)fixture.prob.add_point("P3", width + offset, height);
+                (void)fixture.prob.add_point("P4", width / 2, height / 2);
+
+                for(const auto &pattern: patterns) {
+                    BOOST_TEST_CONTEXT("pattern=" << pattern[0] << pattern[1] << pattern[2] << pattern[3]) {
+                        BOOST_CHECK_GT(fixture.check_all_binding_states(pattern), 0U);
+                    }
+                }
+            }
+        }
+    }
+}
 
 // Test is_satisfied
 

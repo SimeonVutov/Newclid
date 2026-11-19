@@ -98,7 +98,22 @@ Definitions are placed in the different modules of ``jgex/constructions`` (``com
 How can I add new rules?
 ------------------------
 
-Currently, rules cannot be added to Newclid alone, as the proof is processed by Yuclid. A new rule would have to be added both on Newclid's all_rules.py and on Yuclid, where it has to be associated to a matching function and processed in the C++/Python bridges. In Newclid, a rule entry has to be added to the all_rules.py file, to the ALL_RULES list, and a test should be added to tests/test_individual_rules.py.
+A custom rule describes which facts must hold and what Yuclid can
+conclude from them. For example, if ``M`` is the midpoint of ``AB``
+(``midp M A B``), then ``AM`` and ``MB`` have equal length
+(``cong A M M B``). The letters stand for points that Yuclid assigns
+when it matches the rule against a problem.
+
+In Python, create a ``Rule`` with a unique ID, its premises, and its
+conclusions. Pass it to ``GeometricSolverBuilder.with_additional_rules``
+when building a solver with the Yuclid backend. If you run Yuclid
+directly, you can supply the rule in a custom-rule file with
+``--input-additional-rules-file``. Both paths let you combine supported
+predicates into new rules without writing C++.
+
+See :doc:`development/yuclid/setup-and-usage` for runnable examples and the
+supported syntax. To add support for a new predicate or speed up
+matching for an existing one, see :doc:`development/yuclid/providers-and-geometry-cache`.
 
 What do I get after I run a problem?
 ------------------------------------

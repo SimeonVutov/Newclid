@@ -65,10 +65,10 @@ from newclid.all_rules import (
 from newclid.deductors import ARReason
 from newclid.deductors.deductor_interface import ARCoefficient
 from newclid.predicate_types import PredicateArgument
-from newclid.predicates import NUMERICAL_PREDICATES
+from newclid.predicates import NUMERICAL_PREDICATES, predicate_class_from_type
 from newclid.predicates._index import PredicateType
-from newclid.problem import PredicateConstruction, ProblemSetup
-from newclid.rule import Rule
+from newclid.problem import PredicateConstruction, ProblemSetup, is_numerical_argument
+from newclid.rule import Rule, RuleConstruction
 from pydantic import BaseModel, Field
 
 LOGGER = logging.getLogger(__name__)
@@ -256,6 +256,10 @@ class YuclidAdapter(DeductionProvider):
                 LOGGER.error(error_msg)
                 raise YuclidError(error_msg) from e
 
+            stderr = result.stderr.strip()
+            if stderr:
+                LOGGER.warning("Yuclid reported warnings:\n%s", stderr)
+
             try:
                 he_output = YuclidOutput.model_validate_json(result.stdout)
             except json.JSONDecodeError as e:
@@ -411,26 +415,46 @@ def _write_yuclid_setup(problem: ProblemSetup) -> list[str]:
     return setup_lines
 
 
+def _constant_to_yuclid(arg: str) -> str:
+    return arg.replace("pi/", "/")
+
+
 def _predicate_to_yuclid(predicate: PredicateConstruction) -> str:
     predicate_name = predicate.predicate_type.value
     args_txts: list[str] = []
     for arg in predicate.args:
         if "pi/" in arg:
-            args_txts.append(arg.replace("pi/", "/"))
+            args_txts.append(_constant_to_yuclid(arg))
         else:
             args_txts.append(arg)
     return f"{predicate_name} {' '.join(args_txts)}"
+
+
+def _rule_predicate_to_yuclid(predicate: RuleConstruction) -> str:
+    try:
+        predicate_type = PredicateType(predicate.name)
+    except ValueError:
+        return f"{predicate.name} {' '.join(predicate.variables)}"
+
+    predicate_class = predicate_class_from_type(predicate_type)
+    args = tuple(PredicateArgument(arg) for arg in predicate.variables)
+    prepared_args = predicate_class.prepare_rule_arguments(args)
+    args_txts = [
+        _constant_to_yuclid(arg) if is_numerical_argument(arg) else arg
+        for arg in prepared_args
+    ]
+    return f"{predicate.name} {' '.join(args_txts)}"
 
 
 def _write_custom_rule_setup(rule: Rule) -> list[str]:
     rule_setup_lines: list[str] = []
     rule_setup_lines.append(f"rule {rule.id} {' '.join(sorted(rule.variables))}")
     for premise in rule.premises:
-        rule_setup_lines.append(f"require {premise.name} {' '.join(premise.variables)}")
+        premise_txt = _rule_predicate_to_yuclid(premise)
+        rule_setup_lines.append(f"require {premise_txt}")
     for conclusion in rule.conclusions:
-        rule_setup_lines.append(
-            f"conclude {conclusion.name} {' '.join(conclusion.variables)}"
-        )
+        conclusion_txt = _rule_predicate_to_yuclid(conclusion)
+        rule_setup_lines.append(f"conclude {conclusion_txt}")
     rule_setup_lines.append("end")
     return rule_setup_lines
 

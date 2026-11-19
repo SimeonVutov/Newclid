@@ -43,6 +43,11 @@ namespace Yuclid {
          */
         [[nodiscard]] const SegmentBuckets &segment_length_buckets() const;
 
+        [[nodiscard]] const std::vector<PointPairId> *segment_length_bucket_for_pair(
+            ProblemPointIndex first,
+            ProblemPointIndex second
+        ) const;
+
         /**
          * Returns point pairs grouped by undirected line orientation.
          *

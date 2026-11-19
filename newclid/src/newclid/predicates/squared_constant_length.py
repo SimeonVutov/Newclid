@@ -7,6 +7,7 @@ from newclid.numerical import close_enough
 from newclid.predicate_types import PredicateArgument
 from newclid.predicates._index import PredicateType
 from newclid.predicates._interface import PredicateInterface
+from newclid.predicates.constant_length import ConstantLength
 from newclid.symbols.points_registry import Segment
 from newclid.tools import fraction_to_len, str_to_fraction
 
@@ -23,6 +24,12 @@ class SquaredConstantLength(PredicateInterface):
     )
     segment: Segment
     square_length: Fraction
+
+    @staticmethod
+    def prepare_rule_arguments(
+        args: tuple[PredicateArgument, ...],
+    ) -> tuple[PredicateArgument, ...]:
+        return ConstantLength.prepare_rule_arguments(args)
 
     @staticmethod
     def preparse(

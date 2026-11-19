@@ -141,14 +141,11 @@ namespace Yuclid {
 
                 // setup for search stage
                 MappingState mapping_state(schema, *m_problem);
-                std::vector<RuleMapping> mapping_results;
+                std::vector<Theorem> valid_theorems;
                 FilterState filter_state(current_plan.validators.size());
 
                 // search stage
-                search(current_plan, mapping_state, filter_state, geometry_cache, mapping_results);
-
-                // build stage
-                std::vector<Theorem> valid_theorems = build_valid_theorems_from_mappings(schema, mapping_results);
+                search(current_plan, mapping_state, filter_state, geometry_cache, valid_theorems);
 
                 for(auto &candidate : valid_theorems) {
                     all_correct_generated_theorems.push_back(std::move(candidate));
@@ -174,9 +171,7 @@ namespace Yuclid {
 
         for(const PlannedPredicate &candidate: predicates){
             // if everything in the generator is assigned skip it
-            // TODO: Decide wether to run is_satisfied? 
-            // But then there has to be an indication of wether were evaluating generators or filters (filters are already checked, no need to do it twice)
-            // Predicates that already have their own provider will probably not cost to check, but the ones from the base provider will slow things down
+            // Newly completed generators are checked after applying an extension
             if(are_pattern_variables_assigned(candidate, state)) continue;
 
             // get provider and metadata
@@ -199,20 +194,30 @@ namespace Yuclid {
         return cheapest_predicate;
     }
 
-    std::vector<Theorem> GenericRuleMatcher::build_valid_theorems_from_mappings(const RuleSchema &schema, const std::vector<RuleMapping> &mappings) const {
-        std::vector<Theorem> theorems;
+    bool GenericRuleMatcher::check_completed_generators(
+        const RulePlan &plan,
+        const MappingState &state,
+        MappingStateSnapshot previous_state,
+        const LazyGeometryCache &cache
+    ) const {
+        for(const PlannedPredicate &candidate: plan.candidate_generators){
+            if(!are_pattern_variables_assigned(candidate, state)) continue;
 
-        for(const RuleMapping &mapping: mappings){
-            Theorem candidate = build_theorem_from_rule_schema(schema, mapping);
-            if (!candidate.check_hypotheses_nondeg_numerically()) {
-                continue;
+            // Check only generators completed by the current extension
+            bool newly_completed = false;
+            for(const RuleVariableIndex variable: candidate.variable_indices){
+                if(!(previous_state.assigned_variables & (std::uint64_t{1} << variable))){
+                    newly_completed = true;
+                    break;
+                }
             }
-            if(candidate.check_numerically()){
-                theorems.push_back(candidate.normalize());
-            }
+            if(!newly_completed) continue;
+
+            const PredicateProvider* candidate_provider = m_provider_registry.get_provider(candidate.pattern.name);
+            if(!candidate_provider->is_satisfied(candidate, state, cache)) return false;
         }
 
-        return theorems;
+        return true;
     }
 
     void GenericRuleMatcher::search(
@@ -220,7 +225,7 @@ namespace Yuclid {
         MappingState &mapping_state,
         FilterState &filter_state,
         LazyGeometryCache &geometry_cache,
-        std::vector<RuleMapping> &results
+        std::vector<Theorem> &results
     ) const {
         // Save the state of filters on this level
         FilterStateSnapshot filter_snapshot = filter_state.snapshot();
@@ -249,9 +254,16 @@ namespace Yuclid {
         }
 
         // BASE CASE
-        // If all variables are mapped, this is a valid leaf node. Yield the mapping.
+        // If all variables are mapped, build and validate the theorem.
         if(mapping_state.is_complete()) {
-            results.push_back(std::move(mapping_state.to_rule_mapping().value()));
+            // build stage
+            Theorem candidate = build_theorem_from_rule_schema(
+                *plan.schema, mapping_state.to_rule_mapping().value());
+
+            if(candidate.check_hypotheses_nondeg_numerically() && candidate.check_numerically()) {
+                results.push_back(candidate.normalize());
+            }
+
             filter_state.rollback(filter_snapshot);
             return;
         }
@@ -280,7 +292,12 @@ namespace Yuclid {
 
                 // Attempt to apply the generated extension
                 if(mapping_state.try_apply_extension(extension)){
-                    search(plan, mapping_state, filter_state, geometry_cache, results);     // Recurse (go deeper in the tree)
+                    // Complete mappings are checked when building the theorem
+                    if(mapping_state.is_complete() || check_completed_generators(
+                        plan, mapping_state, variable_snapshot, geometry_cache
+                    )){
+                        search(plan, mapping_state, filter_state, geometry_cache, results); // Recurse (go deeper in the tree)
+                    }
                     mapping_state.rollback(variable_snapshot);                              // Backtrack
                 }
             }
